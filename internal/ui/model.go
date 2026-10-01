@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -346,7 +346,7 @@ func (m Model) bodyH() int {
 	if h <= 0 {
 		h = 30
 	}
-	return max(h-3, 8) // two footer lines + margin
+	return max(h-2, 8) // single footer line + margin
 }
 
 // layout splits the screen into three column inner widths (no borders,
@@ -381,7 +381,6 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		body,
 		m.renderInfo(),
-		m.renderHints(),
 	)
 }
 
@@ -512,23 +511,25 @@ func (m Model) renderHelpBox() string {
 }
 
 func (m Model) renderInfo() string {
-	left := brandStyle.Render("▛ CARTRIDGE") +
+	left := brandBadge.Render(" cartridge ") +
 		infoStyle.Render(fmt.Sprintf("  %d ROMs • %d consoles • %s",
-			len(m.games), len(m.rows)-1, truncate(m.romDir, 44)))
-	right := infoStyle.Render(truncate(m.status, 40))
-	if m.status == "" {
-		if g := m.selected(); g != nil {
-			right = infoStyle.Render(g.ShortID()) + infoStyle.Render(" • ") + infoStyle.Render(truncate(g.Title, 40))
-		}
+			len(m.games), len(m.rows)-1, truncate(m.romDir, 40)))
+
+	var context string
+	if m.status != "" {
+		context = infoStyle.Render(truncate(m.status, 40))
+	} else if g := m.selected(); g != nil {
+		context = infoStyle.Render(g.ShortID()) + infoStyle.Render(" • ") +
+			titleBadge.Render(" "+truncate(g.Title, 32)+" ")
 	}
+	right := context
+	if right != "" {
+		right += " "
+	}
+	right += helpBadge.Render(" ? Help ")
+
 	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
 	return left + strings.Repeat(" ", gap) + right
-}
-
-func (m Model) renderHints() string {
-	return infoStyle.Render(fmt.Sprintf(" %s help  %s panes  %s move  %s rescan  %s quit",
-		keyStyle.Render("?"), keyStyle.Render("tab/1-3"), keyStyle.Render("↑↓/jk"),
-		keyStyle.Render("r"), keyStyle.Render("q")))
 }
 
 func clamp(v, lo, hi int) int {

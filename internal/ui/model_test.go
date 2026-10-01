@@ -47,11 +47,16 @@ func TestThreeColumnsRender(t *testing.T) {
 		"Battletoads",                   // game + metadata
 		"Nintendo Entertainment System", // full console name
 		"│",                             // grey dividers, no full borders
-		"CARTRIDGE",                     // brand moved to bottom bar
-		"?",                             // hints point at help
+		"cartridge",                     // small brand badge, bottom bar
+		"? Help",                        // help badge right of the game title
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q\n%s", want, view)
+		}
+	}
+	for _, gone := range []string{"▛", "tab/1-3", "panes"} {
+		if strings.Contains(view, gone) {
+			t.Fatalf("view should not contain %q\n%s", gone, view)
 		}
 	}
 }
