@@ -26,10 +26,30 @@ func sizedModel(t *testing.T, m Model) Model {
 	return mm
 }
 
+func keyMsg(s string) tea.KeyMsg {
+	if len(s) == 1 {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	}
+	switch s {
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}
+	}
+	panic("unknown key: " + s)
+}
+
 func TestThreeColumnsRender(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
 	view := m.View()
-	for _, want := range []string{"CONSOLES", "GAMES", "METADATA", "Battletoads", "Battletoads"} {
+	for _, want := range []string{
+		"CONSOLES", "GAMES", "METADATA", // pane titles
+		"Battletoads",                   // game + metadata
+		"Nintendo Entertainment System", // full console name
+		"│",                             // grey dividers, no full borders
+		"CARTRIDGE",                     // brand moved to bottom bar
+		"?",                             // hints point at help
+	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q\n%s", want, view)
 		}
@@ -39,7 +59,7 @@ func TestThreeColumnsRender(t *testing.T) {
 func TestConsoleFilterAndFocus(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
 	// Move to NES row: rows are [All, NES, GBA].
-	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	out, _ := m.Update(keyMsg("down"))
 	m = out.(Model)
 	if m.rows[m.consCur].ID != "nes" {
 		t.Fatalf("expected nes row, got %q", m.rows[m.consCur].ID)
@@ -49,9 +69,28 @@ func TestConsoleFilterAndFocus(t *testing.T) {
 	}
 
 	// Tab cycles focus consoles -> games -> meta.
-	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	out, _ = m.Update(keyMsg("tab"))
 	m = out.(Model)
 	if m.focus != PaneGames {
 		t.Fatalf("expected games pane, got %d", m.focus)
+	}
+}
+
+func TestHelpToggle(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	out, _ := m.Update(keyMsg("?"))
+	m = out.(Model)
+	if !m.showHelp {
+		t.Fatalf("expected help overlay after ?")
+	}
+	view := m.View()
+	for _, want := range []string{"KEYS", "move up", "rescan", "quit"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("help view missing %q\n%s", want, view)
+		}
+	}
+	out, _ = m.Update(keyMsg("?"))
+	if out.(Model).showHelp {
+		t.Fatalf("expected help overlay to close on second ?")
 	}
 }

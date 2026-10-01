@@ -1,11 +1,14 @@
 // Package ui implements the 3-column cartridge browser:
-// consoles | games | metadata, plus a bottom bar.
+// consoles | games | metadata, separated by grey dividers,
+// with info + hints in the bottom bar and help on "?".
 package ui
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -21,6 +24,52 @@ const (
 	PaneGames
 	PaneMeta
 )
+
+// keyMap wires real keybindings (used both for input and the help view).
+type keyMap struct {
+	Up       key.Binding
+	Down     key.Binding
+	Prev     key.Binding
+	Next     key.Binding
+	Top      key.Binding
+	Bottom   key.Binding
+	PageUp   key.Binding
+	PageDown key.Binding
+	Select   key.Binding
+	Rescan   key.Binding
+	Help     key.Binding
+	Quit     key.Binding
+}
+
+func newKeyMap() keyMap {
+	return keyMap{
+		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "move up")),
+		Down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "move down")),
+		Prev:     key.NewBinding(key.WithKeys("shift+tab", "h", "left"), key.WithHelp("←/h", "pane left")),
+		Next:     key.NewBinding(key.WithKeys("tab", "l", "right"), key.WithHelp("tab", "pane right")),
+		Top:      key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "first")),
+		Bottom:   key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "last")),
+		PageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
+		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
+		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", "open")),
+		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rescan")),
+		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	}
+}
+
+// ShortHelp implements help.KeyMap.
+func (k keyMap) ShortHelp() []key.Binding { return []key.Binding{k.Help, k.Quit} }
+
+// FullHelp implements help.KeyMap.
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Top, k.Bottom},
+		{k.Prev, k.Next, k.Select},
+		{k.PageUp, k.PageDown, k.Rescan},
+		{k.Help, k.Quit},
+	}
+}
 
 // ConsoleRow is one entry of the left column.
 type ConsoleRow struct {
@@ -43,8 +92,11 @@ type Model struct {
 	gameCur  int
 	filtered []rom.Game
 
-	focus Pane
-	meta  viewport.Model
+	focus    Pane
+	meta     viewport.Model
+	keys     keyMap
+	help     help.Model
+	showHelp bool
 
 	width  int
 	height int
@@ -57,7 +109,14 @@ type Model struct {
 
 // New builds the model from an initial scan.
 func New(games []rom.Game, romDir, libPath string) Model {
-	m := Model{romDir: romDir, libPath: libPath, meta: viewport.New(0, 0)}
+	m := Model{
+		romDir:  romDir,
+		libPath: libPath,
+		meta:    viewport.New(0, 0),
+		keys:    newKeyMap(),
+		help:    help.New(),
+	}
+	m.help.ShowAll = true
 	m.setGames(games)
 	return m
 }
@@ -66,17 +125,11 @@ func (m *Model) setGames(games []rom.Game) {
 	m.games = games
 	counts := map[string]int{}
 	names := map[string]string{}
-	shorts := map[string]string{}
 	for _, g := range games {
 		counts[g.ConsoleID]++
 		names[g.ConsoleID] = g.ConsoleName
 	}
-	for _, c := range rom.Consoles {
-		if _, ok := names[c.ID]; ok {
-			shorts[c.ID] = c.Short
-		}
-	}
-	m.rows = []ConsoleRow{{ID: "all", Name: "All consoles", Short: "★", Count: len(games)}}
+	m.rows = []ConsoleRow{{ID: "all", Name: "All consoles", Count: len(games)}}
 	for _, c := range rom.Consoles {
 		if n, ok := counts[c.ID]; ok {
 			m.rows = append(m.rows, ConsoleRow{ID: c.ID, Name: c.Name, Short: c.Short, Count: n})
@@ -149,30 +202,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	}
-	if m.focus == PaneMeta {
-		var cmd tea.Cmd
-		m.meta, cmd = m.meta.Update(msg)
-		return m, cmd
-	}
 	return m, nil
 }
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	k := msg.String()
-	switch k {
-	case "q", "ctrl+c":
+	k := m.keys
+	switch {
+	case key.Matches(msg, k.Quit):
 		return m, tea.Quit
-	case "tab", "l", "right":
-		// l/right move focus right… but j/k-style game cursors live
-		// on the games pane, so only treat l as focus when not typing.
-		if k == "l" && m.focus == PaneGames {
-			// still move focus: games -> meta is the natural direction
+	case key.Matches(msg, k.Help):
+		m.showHelp = !m.showHelp
+		return m, nil
+	}
+	if m.showHelp {
+		if msg.String() == "esc" {
+			m.showHelp = false
 		}
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, k.Next):
 		m.focus = (m.focus + 1) % 3
 		return m, nil
-	case "shift+tab", "h", "left":
+	case key.Matches(msg, k.Prev):
 		m.focus = (m.focus + 2) % 3
 		return m, nil
+	}
+	switch msg.String() {
 	case "1":
 		m.focus = PaneConsoles
 		return m, nil
@@ -182,95 +238,93 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.focus = PaneMeta
 		return m, nil
-	case "r":
-		m.status = "scanning " + m.romDir + " …"
-		return m, m.rescanCmd()
-	case "g":
-		m.jumpTop()
-		return m, nil
-	case "G":
-		m.jumpBottom()
+	case "esc":
+		m.focus = PaneGames
 		return m, nil
 	}
 
 	switch m.focus {
 	case PaneConsoles:
-		switch k {
-		case "up", "k":
+		switch {
+		case key.Matches(msg, k.Up):
 			if m.consCur > 0 {
 				m.consCur--
 				m.gameCur = 0
 				m.refilter()
 			}
-		case "down", "j":
+		case key.Matches(msg, k.Down):
 			if m.consCur < len(m.rows)-1 {
 				m.consCur++
 				m.gameCur = 0
 				m.refilter()
 			}
-		case "enter", " ":
+		case key.Matches(msg, k.Top):
+			m.consCur = 0
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.Bottom):
+			m.consCur = len(m.rows) - 1
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.Select):
 			m.focus = PaneGames
 		}
 	case PaneGames:
-		switch k {
-		case "up", "k":
+		switch {
+		case key.Matches(msg, k.Up):
 			if m.gameCur > 0 {
 				m.gameCur--
 				m.refreshMeta()
 			}
-		case "down", "j":
+		case key.Matches(msg, k.Down):
 			if m.gameCur < len(m.filtered)-1 {
 				m.gameCur++
 				m.refreshMeta()
 			}
-		case "pgup":
+		case key.Matches(msg, k.PageUp):
 			m.gameCur = max(m.gameCur-10, 0)
 			m.refreshMeta()
-		case "pgdown":
-			m.gameCur = min(m.gameCur+10, len(m.filtered)-1)
+		case key.Matches(msg, k.PageDown):
+			m.gameCur = min(m.gameCur+10, max(len(m.filtered)-1, 0))
 			m.refreshMeta()
+		case key.Matches(msg, k.Top):
+			m.gameCur = 0
+			m.refreshMeta()
+		case key.Matches(msg, k.Bottom):
+			m.gameCur = max(len(m.filtered)-1, 0)
+			m.refreshMeta()
+		case key.Matches(msg, k.Rescan):
+			m.status = "scanning " + m.romDir + " …"
+			return m, m.rescanCmd()
+		case key.Matches(msg, k.Select):
+			m.focus = PaneMeta
 		}
 	case PaneMeta:
-		switch k {
-		case "up", "k":
+		switch {
+		case key.Matches(msg, k.Up):
 			m.meta.LineUp(1)
-		case "down", "j":
+		case key.Matches(msg, k.Down):
 			m.meta.LineDown(1)
-		case "pgup", " ":
+		case key.Matches(msg, k.PageUp):
 			m.meta.HalfViewUp()
-		case "pgdown", "enter":
+		case key.Matches(msg, k.PageDown), key.Matches(msg, k.Select):
 			m.meta.HalfViewDown()
+		case key.Matches(msg, k.Top):
+			m.meta.GotoTop()
+		case key.Matches(msg, k.Bottom):
+			m.meta.GotoBottom()
+		case key.Matches(msg, k.Rescan):
+			m.status = "scanning " + m.romDir + " …"
+			return m, m.rescanCmd()
 		}
+	}
+
+	// Rescan is global: allow it from the consoles pane too.
+	if key.Matches(msg, k.Rescan) {
+		m.status = "scanning " + m.romDir + " …"
+		return m, m.rescanCmd()
 	}
 	return m, nil
-}
-
-func (m *Model) jumpTop() {
-	switch m.focus {
-	case PaneConsoles:
-		m.consCur = 0
-		m.gameCur = 0
-		m.refilter()
-	case PaneGames:
-		m.gameCur = 0
-		m.refreshMeta()
-	case PaneMeta:
-		m.meta.GotoTop()
-	}
-}
-
-func (m *Model) jumpBottom() {
-	switch m.focus {
-	case PaneConsoles:
-		m.consCur = len(m.rows) - 1
-		m.gameCur = 0
-		m.refilter()
-	case PaneGames:
-		m.gameCur = max(len(m.filtered)-1, 0)
-		m.refreshMeta()
-	case PaneMeta:
-		m.meta.GotoBottom()
-	}
 }
 
 func (m Model) rescanCmd() tea.Cmd {
@@ -282,26 +336,30 @@ func (m Model) rescanCmd() tea.Cmd {
 }
 
 func (m *Model) sizeMeta() {
-	_, _, mw, mh := m.layout()
-	m.meta.Width = max(mw-4, 10)
-	m.meta.Height = max(mh-4, 3)
+	_, _, mw := m.layout()
+	m.meta.Width = max(mw, 10)
+	m.meta.Height = max(m.bodyH()-1, 3) // one line for the METADATA title
 }
 
-// layout splits the screen: header, three columns, bottom bar.
-func (m Model) layout() (cw, gw, mw, mh int) {
-	w, h := m.width, m.height
-	if w <= 0 {
-		w = 120
-	}
+func (m Model) bodyH() int {
+	h := m.height
 	if h <= 0 {
 		h = 30
 	}
-	bodyH := max(h-5, 8) // header(2) + footer(2) + margins
-	cw = clamp(w*22/100, 20, 30)
-	mw = clamp(w*36/100, 28, 60)
-	gw = max(w-cw-mw-6, 20)
-	mh = bodyH
-	return cw, gw, mw, mh
+	return max(h-3, 8) // two footer lines + margin
+}
+
+// layout splits the screen into three column inner widths (no borders,
+// columns are separated by grey divider lines).
+func (m Model) layout() (cw, gw, mw int) {
+	w := m.width
+	if w <= 0 {
+		w = 120
+	}
+	cw = clamp(w*30/100, 30, 40)
+	mw = clamp(w*30/100, 28, 44)
+	gw = max(w-cw-mw-2-4, 20) // 2 dividers + padding
+	return cw, gw, mw
 }
 
 // View implements tea.Model.
@@ -309,101 +367,110 @@ func (m Model) View() string {
 	if !m.ready {
 		return "cartridge: waiting for terminal size…"
 	}
-	cw, gw, mw, mh := m.layout()
-
-	left := paneStyle(m.focus == PaneConsoles, cw, mh).Render(m.renderConsoles(mh))
-	mid := paneStyle(m.focus == PaneGames, gw, mh).Render(m.renderGames(mh))
-	right := paneStyle(m.focus == PaneMeta, mw, mh).Render(m.renderMetaPane(mh))
-
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, mid, right)
+	var body string
+	if m.showHelp {
+		body = m.renderHelpBox()
+	} else {
+		cw, gw, mw := m.layout()
+		left := m.renderConsoles(cw)
+		mid := m.renderGames(gw)
+		right := m.renderMetaPane(mw)
+		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderHeader(),
 		body,
-		m.renderBar(),
+		m.renderInfo(),
+		m.renderHints(),
 	)
 }
 
-func (m Model) renderHeader() string {
-	total := len(m.games)
-	sel := m.selected()
-	right := fmt.Sprintf("%d ROMs • %s", total, truncate(m.romDir, 48))
-	if sel != nil {
-		right = fmt.Sprintf("%s • %s", sel.ShortID(), right)
+// column pads plain and pre-styled lines to exactly bodyH rows.
+// Lines arrive already fitted to width; padL/padR add air around dividers.
+func (m Model) column(lines []string, w, padL, padR int) string {
+	_ = w
+	l, r := strings.Repeat(" ", padL), strings.Repeat(" ", padR)
+	for len(lines) < m.bodyH() {
+		lines = append(lines, "")
 	}
-	left := headerStyle.Render("▛ CARTRIDGE") + headerDim.Render("  retro rom shelf")
-	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(right)-2, 1)
-	return left + strings.Repeat(" ", gap) + headerDim.Render(right)
+	for i := range lines {
+		lines[i] = l + lines[i] + r
+	}
+	return strings.Join(lines[:m.bodyH()], "\n")
 }
 
-func (m Model) renderConsoles(paneH int) string {
-	var b strings.Builder
-	b.WriteString(paneTitle.Render(fmt.Sprintf("CONSOLES (%d)", len(m.rows))) + "\n")
-	visible := max(paneH-3, 1)
+// styledRow highlights a pre-fitted plain row and marks it selected.
+func styledRow(plain string) string {
+	if len(plain) < 2 {
+		return plain
+	}
+	return curStyle.Render("> ") + selStyle.Render(plain[2:])
+}
+
+func (m Model) renderConsoles(w int) string {
+	lines := []string{titleFor("CONSOLES", m.focus == PaneConsoles, w)}
+	visible := max(m.bodyH()-1, 1)
 	start := clamp(m.consCur-visible/2, 0, max(len(m.rows)-visible, 0))
 	for i := start; i < min(start+visible, len(m.rows)); i++ {
 		r := m.rows[i]
-		line := fmt.Sprintf("%-4s %s", r.Short, truncate(r.Name, 40))
-		line = fmt.Sprintf("%-*s %3d", 24, truncate(line, 24), r.Count)
+		count := fmt.Sprintf("%d", r.Count)
+		nameW := max(w-2-1-len(count), 4)
+		name := truncate(r.Name, nameW)
+		plain := fit("  "+name+strings.Repeat(" ", max(nameW-lipgloss.Width(name)+1, 1))+count, w)
 		if i == m.consCur {
-			mark := "> "
-			if m.focus == PaneConsoles {
-				b.WriteString(curStyle.Render(mark) + selStyle.Render(line) + "\n")
-			} else {
-				b.WriteString(curStyle.Render(mark) + selStyle.Render(line) + "\n")
-			}
-		} else {
-			b.WriteString("  " + lipgloss.NewStyle().Foreground(brightTx).Render(line) + "\n")
+			plain = styledRow(plain)
 		}
+		lines = append(lines, plain)
 	}
-	return b.String()
+	return m.column(lines, w, 0, 1)
 }
 
-func (m Model) renderGames(paneH int) string {
-	var b strings.Builder
-	title := "GAMES"
-	if m.consCur < len(m.rows) {
+func (m Model) renderGames(w int) string {
+	title := fmt.Sprintf("GAMES (%d)", len(m.filtered))
+	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
 		title = fmt.Sprintf("GAMES — %s (%d)", m.rows[m.consCur].Short, len(m.filtered))
 	}
-	b.WriteString(paneTitle.Render(truncate(title, 60)) + "\n")
+	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
 	if len(m.filtered) == 0 {
-		b.WriteString(headerDim.Render("  (empty — press r to rescan)") + "\n")
-		return b.String()
+		lines = append(lines, infoStyle.Render(fit("empty — press r", w)))
+		return m.column(lines, w, 1, 1)
 	}
-	visible := max(paneH-3, 1)
-	innerW := max(m.width-m.width*22/100-m.width*36/100-14, 20)
+	visible := max(m.bodyH()-1, 1)
 	start := clamp(m.gameCur-visible/2, 0, max(len(m.filtered)-visible, 0))
 	for i := start; i < min(start+visible, len(m.filtered)); i++ {
-		g := m.filtered[i]
-		line := fmt.Sprintf("%s  %s", truncate(g.Title, innerW-14), headerDim.Render(g.ShortID()))
+		plain := fit("  "+truncate(m.filtered[i].Title, w-2), w)
 		if i == m.gameCur {
-			b.WriteString(curStyle.Render("> ") + selStyle.Render(truncate(g.Title, innerW-4)) + "\n")
-		} else {
-			b.WriteString("  " + lipgloss.NewStyle().Foreground(brightTx).Render(line) + "\n")
+			plain = styledRow(plain)
 		}
+		lines = append(lines, plain)
 	}
-	return b.String()
+	return m.column(lines, w, 1, 1)
 }
 
-func (m Model) renderMetaPane(paneH int) string {
-	var b strings.Builder
-	b.WriteString(paneTitle.Render("METADATA") + "\n")
-	b.WriteString(m.meta.View())
-	_ = paneH
-	return b.String()
+func (m Model) renderMetaPane(w int) string {
+	lines := []string{titleFor("METADATA", m.focus == PaneMeta, w)}
+	for _, ln := range strings.Split(m.meta.View(), "\n") {
+		lines = append(lines, ln)
+	}
+	return m.column(lines, w, 1, 0)
 }
 
+// renderMeta builds the metadata text, every line within viewport width.
 func (m Model) renderMeta() string {
 	g := m.selected()
 	if g == nil {
-		return headerDim.Render("No game selected.")
+		return infoStyle.Render("No game selected.")
 	}
+	w := max(m.meta.Width, 20)
 	var b strings.Builder
 	kv := func(k, v string) {
-		b.WriteString(metaKey.Render(k) + metaVal.Render(truncate(v, 120)) + "\n")
+		b.WriteString(metaKey.Render(k) + metaVal.Render(truncate(v, w-10)) + "\n")
 	}
-	b.WriteString(metaVal.Render(g.Title) + "\n\n")
-	b.WriteString(metaKey.Render("id") + metaID.Render(g.ID) + "\n")
-	kv("short", g.ShortID())
+	b.WriteString(metaVal.Render(truncate(g.Title, w)) + "\n\n")
+	b.WriteString(metaKey.Render("id") + metaID.Render(g.ShortID()) + "\n")
+	for _, chunk := range wrapPlain(g.ID, w-4, "    ") {
+		b.WriteString(dim(chunk) + "\n")
+	}
 	kv("console", fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID))
 	if g.Region != "" {
 		kv("region", g.Region)
@@ -412,7 +479,6 @@ func (m Model) renderMeta() string {
 		kv("tags", strings.Join(g.Tags, ", "))
 	}
 	kv("size", fmt.Sprintf("%d bytes (%.2f MiB)", g.Size, float64(g.Size)/(1<<20)))
-	kv("sha256", g.SHA256)
 	b.WriteString("\n")
 	kv("file", g.Path)
 	if g.Inner != "" {
@@ -421,20 +487,48 @@ func (m Model) renderMeta() string {
 	return b.String()
 }
 
-func (m Model) renderBar() string {
-	hints := fmt.Sprintf(" %s focus %s consoles/games/meta %s ↑↓/jk move %s r rescan %s q quit ",
-		keyStyle.Render("tab"), headerDim.Render("1/2/3"),
-		keyStyle.Render(""), keyStyle.Render(""), keyStyle.Render(""))
-	status := truncate(m.status, 60)
-	if status == "" {
+func dim(s string) string { return infoStyle.Render(s) }
+
+// wrapPlain splits s into chunks of at most w cells with indent prefix.
+func wrapPlain(s string, w int, indent string) []string {
+	if w <= 0 {
+		return []string{s}
+	}
+	var out []string
+	r := []rune(s)
+	for len(r) > 0 {
+		n := min(len(r), w)
+		out = append(out, indent+string(r[:n]))
+		r = r[n:]
+	}
+	return out
+}
+
+func (m Model) renderHelpBox() string {
+	box := titleFor("KEYS  (?/esc to close)", true, 52) + "\n\n" +
+		m.help.FullHelpView(m.keys.FullHelp())
+	boxed := helpBox.Render(box)
+	return lipgloss.Place(m.width, m.bodyH(), lipgloss.Center, lipgloss.Center, boxed)
+}
+
+func (m Model) renderInfo() string {
+	left := brandStyle.Render("▛ CARTRIDGE") +
+		infoStyle.Render(fmt.Sprintf("  %d ROMs • %d consoles • %s",
+			len(m.games), len(m.rows)-1, truncate(m.romDir, 44)))
+	right := infoStyle.Render(truncate(m.status, 40))
+	if m.status == "" {
 		if g := m.selected(); g != nil {
-			status = fmt.Sprintf("%s • %s", g.ConsoleID, g.Title)
+			right = infoStyle.Render(g.ShortID()) + infoStyle.Render(" • ") + infoStyle.Render(truncate(g.Title, 40))
 		}
 	}
-	w := max(m.width-2, 10)
-	space := max(w-lipgloss.Width(hints)-lipgloss.Width(status)-2, 1)
-	line := hints + strings.Repeat(" ", space) + headerDim.Render(status)
-	return barStyle.Render(line)
+	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
+	return left + strings.Repeat(" ", gap) + right
+}
+
+func (m Model) renderHints() string {
+	return infoStyle.Render(fmt.Sprintf(" %s help  %s panes  %s move  %s rescan  %s quit",
+		keyStyle.Render("?"), keyStyle.Render("tab/1-3"), keyStyle.Render("↑↓/jk"),
+		keyStyle.Render("r"), keyStyle.Render("q")))
 }
 
 func clamp(v, lo, hi int) int {
