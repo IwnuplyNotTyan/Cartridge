@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"cartridge/internal/rom"
 )
@@ -35,8 +36,25 @@ func keyMsg(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyTab}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
 	}
 	panic("unknown key: " + s)
+}
+
+// lastContentLine returns the last non-empty line (skips the outer gap).
+func lastContentLine(t *testing.T, view string) string {
+	t.Helper()
+	lines := strings.Split(view, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	t.Fatalf("view has no content lines\n%s", view)
+	return ""
 }
 
 func TestThreeColumnsRender(t *testing.T) {
@@ -99,13 +117,56 @@ func TestHelpToggle(t *testing.T) {
 		}
 	}
 	// Full help must sit above the bottom bar: columns stay, bar stays last.
-	lines := strings.Split(view, "\n")
-	last := lines[len(lines)-1]
-	if !strings.Contains(last, "cartridge") {
+	if last := lastContentLine(t, view); !strings.Contains(last, "cartridge") {
 		t.Fatalf("bottom bar must stay last, got %q\n%s", last, view)
 	}
 	out, _ = m.Update(keyMsg("?"))
 	if out.(Model).showHelp {
 		t.Fatalf("expected full help to collapse on second ?")
+	}
+}
+
+func TestOuterGap(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "" {
+		t.Fatalf("expected 1-cell top gap, first line %q\n%s", lines[0], view)
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) != "" {
+		t.Fatalf("expected 1-cell bottom gap, last line %q\n%s", lines[len(lines)-1], view)
+	}
+}
+
+func TestConsolePageUpDown(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	if m.focus != PaneConsoles {
+		t.Fatalf("expected consoles focus by default, got %d", m.focus)
+	}
+	// rows are [All, NES, GBA]: pgdown jumps to the end, pgup back to start.
+	out, _ := m.Update(keyMsg("pgdown"))
+	m = out.(Model)
+	if m.rows[m.consCur].ID != "gba" {
+		t.Fatalf("expected gba row after pgdown, got %q", m.rows[m.consCur].ID)
+	}
+	out, _ = m.Update(keyMsg("pgup"))
+	m = out.(Model)
+	if m.rows[m.consCur].ID != "all" {
+		t.Fatalf("expected all row after pgup, got %q", m.rows[m.consCur].ID)
+	}
+}
+
+func TestWrapSoftNoLoss(t *testing.T) {
+	// A spaceless hash must survive wrapping without "…" losses.
+	src := "aaa111bbb222ccc333ddd444eee555fff666ggg777hhh888iii999"
+	var got strings.Builder
+	for _, ln := range wrapSoft(src, 10) {
+		if lipgloss.Width(ln) > 10 {
+			t.Fatalf("line wider than 10: %q", ln)
+		}
+		got.WriteString(ln)
+	}
+	if got.String() != src {
+		t.Fatalf("wrap lost text: got %q want %q", got.String(), src)
 	}
 }

@@ -4,29 +4,37 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/charmtone"
+)
+
+// appGap is the outer gap (in cells) around the whole window.
+const appGap = 1
+
+// tone maps a CharmTone key onto a lipgloss color.
+func tone(k charmtone.Key) lipgloss.Color { return lipgloss.Color(k.Hex()) }
+
+var (
+	accent   = tone(charmtone.Charple) // focused pane title / selection
+	divider  = tone(charmtone.Iron)    // column separators
+	dimText  = tone(charmtone.Squid)
+	brightTx = tone(charmtone.Salt)
+	idColor  = tone(charmtone.Tang) // stable ID
 )
 
 var (
-	accent   = lipgloss.Color("62")  // violet, focused pane title / selection
-	divider  = lipgloss.Color("240") // grey column separators
-	dimText  = lipgloss.Color("243")
-	brightTx = lipgloss.Color("252")
-	idColor  = lipgloss.Color("214") // amber for stable ID
-)
-
-var (
+	appStyle    = lipgloss.NewStyle().Margin(appGap)
 	sepStyle    = lipgloss.NewStyle().Foreground(divider)
-	titleActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
+	titleActive = lipgloss.NewStyle().Bold(true).Foreground(tone(charmtone.Dolly))
 	titleDim    = lipgloss.NewStyle().Bold(true).Foreground(dimText)
-	brandBadge  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("205"))
-	titleBadge  = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("5"))
-	helpBadge   = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("239"))
+	brandBadge  = lipgloss.NewStyle().Foreground(tone(charmtone.Butter)).Background(tone(charmtone.Charple))
+	titleBadge  = lipgloss.NewStyle().Foreground(tone(charmtone.Butter)).Background(tone(charmtone.Grape))
+	helpBadge   = lipgloss.NewStyle().Foreground(tone(charmtone.Smoke)).Background(tone(charmtone.Iron))
 	infoStyle   = lipgloss.NewStyle().Foreground(dimText)
-	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("230")).Bold(true)
+	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(tone(charmtone.Butter)).Bold(true)
 	curStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	metaKey = lipgloss.NewStyle().Foreground(dimText).Width(9)
-	metaVal = lipgloss.NewStyle().Foreground(brightTx)
-	metaID  = lipgloss.NewStyle().Foreground(idColor).Bold(true)
+	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(9)
+	metaVal     = lipgloss.NewStyle().Foreground(brightTx)
+	metaID      = lipgloss.NewStyle().Foreground(idColor).Bold(true)
 )
 
 func titleFor(name string, focused bool, w int) string {
@@ -38,18 +46,29 @@ func titleFor(name string, focused bool, w int) string {
 }
 
 // truncate cuts s to at most n cells, adding … on overflow.
+// Width-aware: wide runes count by cell width, so CJK/emoji never
+// break the column layout the way a hard rune-count cut would.
 func truncate(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= n {
+	if lipgloss.Width(s) <= n {
 		return s
 	}
 	if n == 1 {
 		return "…"
 	}
-	return string(r[:n-1]) + "…"
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if w+rw > n-1 {
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	return b.String() + "…"
 }
 
 // fit truncates s to w cells and pads it to exactly w.
@@ -59,4 +78,61 @@ func fit(s string, w int) string {
 		t += strings.Repeat(" ", pad)
 	}
 	return t
+}
+
+// wrapSoft word-wraps s into lines of at most w cells.
+// Words longer than w are split only as a last resort, so unlike a hard
+// rune-count cut no text is ever replaced by "…" and lost.
+func wrapSoft(s string, w int) []string {
+	if w <= 0 {
+		return []string{s}
+	}
+	var out []string
+	var line strings.Builder
+	lineW := 0
+	flush := func() {
+		out = append(out, line.String())
+		line.Reset()
+		lineW = 0
+	}
+	for _, word := range strings.Fields(s) {
+		for lipgloss.Width(word) > w {
+			if lineW > 0 {
+				flush()
+			}
+			head, tail := cutWord(word, w)
+			out = append(out, head)
+			word = tail
+		}
+		ww := lipgloss.Width(word)
+		switch {
+		case lineW == 0:
+			line.WriteString(word)
+			lineW = ww
+		case lineW+1+ww <= w:
+			line.WriteString(" " + word)
+			lineW += 1 + ww
+		default:
+			flush()
+			line.WriteString(word)
+			lineW = ww
+		}
+	}
+	if lineW > 0 || len(out) == 0 {
+		out = append(out, line.String())
+	}
+	return out
+}
+
+// cutWord splits word into a head of at most w cells and the tail.
+func cutWord(word string, w int) (head, tail string) {
+	used := 0
+	for i, r := range word {
+		rw := lipgloss.Width(string(r))
+		if used+rw > w {
+			return word[:i], word[i:]
+		}
+		used += rw
+	}
+	return word, ""
 }

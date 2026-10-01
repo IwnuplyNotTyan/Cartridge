@@ -9,9 +9,11 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	lipglossv2 "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/charmtone"
 
 	"cartridge/internal/rom"
 )
@@ -117,6 +119,15 @@ func New(games []rom.Game, romDir, libPath string) Model {
 		help:    help.New(),
 	}
 	m.help.ShowAll = true
+	// NB: help comes from bubbles v2, so its styles use charm.land/lipgloss/v2
+	// where Color is a constructor func, not a type.
+	m.help.Styles.ShortKey = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Hazy.Hex()))
+	m.help.Styles.ShortDesc = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Squid.Hex()))
+	m.help.Styles.ShortSeparator = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
+	m.help.Styles.FullKey = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Hazy.Hex()))
+	m.help.Styles.FullDesc = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Squid.Hex()))
+	m.help.Styles.FullSeparator = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
+	m.help.Styles.Ellipsis = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
 	m.setGames(games)
 	return m
 }
@@ -184,7 +195,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.ready = true
-		m.help.SetWidth(msg.Width)
+		m.help.SetWidth(m.contentW())
 		m.sizeMeta()
 		m.refreshMeta()
 		return m, nil
@@ -261,6 +272,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.gameCur = 0
 				m.refilter()
 			}
+		case key.Matches(msg, k.PageUp):
+			m.consCur = max(m.consCur-10, 0)
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.PageDown):
+			m.consCur = min(m.consCur+10, len(m.rows)-1)
+			m.gameCur = 0
+			m.refilter()
 		case key.Matches(msg, k.Top):
 			m.consCur = 0
 			m.gameCur = 0
@@ -353,21 +372,31 @@ func (m Model) helpHeight() int {
 	return max(lipgloss.Height(m.helpView()), 1)
 }
 
-func (m Model) bodyH() int {
-	h := m.height
-	if h <= 0 {
-		h = 30
-	}
-	return max(h-2-m.helpHeight(), 5) // full help + info bar + margin
-}
-
-// layout splits the screen into three column inner widths (no borders,
-// columns are separated by grey divider lines).
-func (m Model) layout() (cw, gw, mw int) {
+// contentW/H is the drawable area inside the outer window gap.
+func (m Model) contentW() int {
 	w := m.width
 	if w <= 0 {
 		w = 120
 	}
+	return max(w-2*appGap, 20)
+}
+
+func (m Model) contentH() int {
+	h := m.height
+	if h <= 0 {
+		h = 30
+	}
+	return max(h-2*appGap, 10)
+}
+
+func (m Model) bodyH() int {
+	return max(m.contentH()-1-m.helpHeight(), 5) // single info-bar line, no slack
+}
+
+// layout splits the content area into three column inner widths (no borders,
+// columns are separated by divider lines).
+func (m Model) layout() (cw, gw, mw int) {
+	w := m.contentW()
 	cw = clamp(w*30/100, 30, 40)
 	mw = clamp(w*30/100, 28, 44)
 	gw = max(w-cw-mw-2-4, 20) // 2 dividers + padding
@@ -385,17 +414,20 @@ func (m Model) View() string {
 	right := m.renderMetaPane(mw)
 	sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+	var content string
 	if m.showHelp {
-		return lipgloss.JoinVertical(lipgloss.Left,
+		content = lipgloss.JoinVertical(lipgloss.Left,
 			body,
 			m.renderHelp(),
 			m.renderInfo(),
 		)
+	} else {
+		content = lipgloss.JoinVertical(lipgloss.Left,
+			body,
+			m.renderInfo(),
+		)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left,
-		body,
-		m.renderInfo(),
-	)
+	return appStyle.Render(content)
 }
 
 // column pads plain and pre-styled lines to exactly bodyH rows.
@@ -469,6 +501,8 @@ func (m Model) renderMetaPane(w int) string {
 }
 
 // renderMeta builds the metadata text, every line within viewport width.
+// Values are soft-wrapped (never hard-truncated with "…"), so the viewport
+// scroll reveals the full text instead of losing it to truncation.
 func (m Model) renderMeta() string {
 	g := m.selected()
 	if g == nil {
@@ -477,12 +511,21 @@ func (m Model) renderMeta() string {
 	w := max(m.meta.Width, 20)
 	var b strings.Builder
 	kv := func(k, v string) {
-		b.WriteString(metaKey.Render(k) + metaVal.Render(truncate(v, w-10)) + "\n")
+		for i, ln := range wrapSoft(v, max(w-9, 10)) {
+			if i == 0 {
+				b.WriteString(metaKey.Render(k) + metaVal.Render(ln) + "\n")
+			} else {
+				b.WriteString(strings.Repeat(" ", 9) + metaVal.Render(ln) + "\n")
+			}
+		}
 	}
-	b.WriteString(metaVal.Render(truncate(g.Title, w)) + "\n\n")
+	for _, ln := range wrapSoft(g.Title, w) {
+		b.WriteString(metaVal.Render(ln) + "\n")
+	}
+	b.WriteString("\n")
 	b.WriteString(metaKey.Render("id") + metaID.Render(g.ShortID()) + "\n")
-	for _, chunk := range wrapPlain(g.ID, w-4, "    ") {
-		b.WriteString(dim(chunk) + "\n")
+	for _, ln := range wrapSoft(g.ID, max(w-4, 10)) {
+		b.WriteString(dim("    "+ln) + "\n")
 	}
 	kv("console", fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID))
 	if g.Region != "" {
@@ -501,21 +544,6 @@ func (m Model) renderMeta() string {
 }
 
 func dim(s string) string { return infoStyle.Render(s) }
-
-// wrapPlain splits s into chunks of at most w cells with indent prefix.
-func wrapPlain(s string, w int, indent string) []string {
-	if w <= 0 {
-		return []string{s}
-	}
-	var out []string
-	r := []rune(s)
-	for len(r) > 0 {
-		n := min(len(r), w)
-		out = append(out, indent+string(r[:n]))
-		r = r[n:]
-	}
-	return out
-}
 
 // renderHelp is the bubbles full-help strip right above the bottom bar.
 func (m Model) renderHelp() string {
@@ -543,7 +571,7 @@ func (m Model) renderInfo() string {
 	}
 	right += helpBadge.Render(" ? Help ")
 
-	gap := max(m.width-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
+	gap := max(m.contentW()-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
 	return left + strings.Repeat(" ", gap) + right
 }
 
