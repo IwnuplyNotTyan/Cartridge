@@ -1,5 +1,5 @@
 {
-  description = "🌌 Screensaver";
+  description = "🕹️ Cartridge — retro ROM shelf TUI";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -14,24 +14,23 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       version = "0.1.0";
-      mkMonolisa = pkgs: tags: pkgs.buildGo127Module {
-        pname = "monolisa";
+      mkCartridge = pkgs: pkgs.buildGoModule {
+        pname = "cartridge";
         inherit version;
         src = self;
-        modules = ./gomod2nix.toml;
-        inherit tags;
+
+        # Fill after `go.mod` changes:
+        #   nix build 2>&1 | grep 'got:'
+        vendorHash = pkgs.lib.fakeHash;
 
         ldflags = [
           "-s"
           "-w"
         ];
 
-        vendorHash = "sha256-MEdSLAuG6es8mkKjsPdiNNSfA/6ojXR5NWynxkofJbQ=";
-
         meta = {
-          description = "Screensaver without love :3";
-          homepage = "https://github.com/IwnuplyNotTyan/monolisa";
-          mainProgram = "monolisa";
+          description = "Retro ROM shelf: detect, shelve and browse console games in the terminal";
+          mainProgram = "cartridge";
         };
       };
     in
@@ -41,8 +40,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = mkMonolisa pkgs [ ];
-          ssh = mkMonolisa pkgs [ "ssh" ];
+          default = mkCartridge pkgs;
         });
       devShells = forAllSystems (system:
         let
