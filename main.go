@@ -6,29 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"cartridge/internal/config"
+	"cartridge/internal/i18n"
 	"cartridge/internal/library"
 	"cartridge/internal/rom"
 	"cartridge/internal/ui"
 )
-
-func defaultRomDir() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		p := filepath.Join(home, "files", "games")
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
-	}
-	for _, p := range []string{"./games", "."} {
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
-	}
-	return "."
-}
 
 func consoleShort(g rom.Game) string {
 	for _, c := range rom.Consoles {
@@ -39,25 +26,73 @@ func consoleShort(g rom.Game) string {
 	return "???"
 }
 
+// usageLang pre-detects the language for --help output:
+// an explicit --lang value wins, then $CARTRIDGE_LANG, then the locale.
+func usageLang() i18n.Lang {
+	args := os.Args[1:]
+	for i, a := range args {
+		var v string
+		switch {
+		case a == "--lang" || a == "-lang":
+			if i+1 < len(args) {
+				v = args[i+1]
+			}
+		case strings.HasPrefix(a, "--lang="):
+			v = strings.TrimPrefix(a, "--lang=")
+		case strings.HasPrefix(a, "-lang="):
+			v = strings.TrimPrefix(a, "-lang=")
+		default:
+			continue
+		}
+		if l := i18n.Parse(v); l != i18n.Auto {
+			return l
+		}
+		return i18n.Detect()
+	}
+	if v := os.Getenv(config.EnvLang); v != "" {
+		if l := i18n.Parse(v); l != i18n.Auto {
+			return l
+		}
+	}
+	return i18n.Detect()
+}
+
 func main() {
-	dir := flag.String("dir", defaultRomDir(), "directory with ROM files to scan")
-	lib := flag.String("library", library.DefaultPath(), "path to library database (JSON)")
-	printOnly := flag.Bool("print", false, "print scanned library and exit (no TUI)")
+	// Preliminary language so --help itself is localized.
+	i18n.Set(usageLang())
+
+	dir := flag.String("dir", "", i18n.T("flag.dir"))
+	lib := flag.String("library", "", i18n.T("flag.library"))
+	lang := flag.String("lang", "", i18n.T("flag.lang"))
+	cfgPath := flag.String("config", "", i18n.T("flag.config"))
+	printOnly := flag.Bool("print", false, i18n.T("flag.print"))
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "%s\n%s\n\n",
+			i18n.T("flag.usage.head"), i18n.T("flag.usage.src"))
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
-	games, errs := rom.ScanDir(*dir)
+	cfg, err := config.Resolve(*dir, *lib, *lang, *cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
+		os.Exit(1)
+	}
+	i18n.Set(cfg.Lang)
+
+	games, errs := rom.ScanDir(cfg.RomDir)
 	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "cartridge: scan warning: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.scan_warn", err))
 	}
 
-	stored, err := library.Load(*lib)
+	stored, err := library.Load(cfg.Library)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
 		os.Exit(1)
 	}
 	games = library.Merge(stored, games)
-	if err := library.Save(*lib, games); err != nil {
-		fmt.Fprintf(os.Stderr, "cartridge: save library: %v\n", err)
+	if err := library.Save(cfg.Library, games); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.save_fail", err))
 		os.Exit(1)
 	}
 
@@ -68,7 +103,7 @@ func main() {
 		return
 	}
 
-	m := ui.New(games, *dir, *lib)
+	m := ui.New(games, cfg.RomDir, cfg.Library)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)

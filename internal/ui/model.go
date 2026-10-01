@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/charmtone"
 
+	"cartridge/internal/i18n"
 	"cartridge/internal/rom"
 )
 
@@ -45,19 +46,24 @@ type keyMap struct {
 
 func newKeyMap() keyMap {
 	return keyMap{
-		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "move up")),
-		Down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "move down")),
-		Prev:     key.NewBinding(key.WithKeys("shift+tab", "h", "left"), key.WithHelp("←/h", "pane left")),
-		Next:     key.NewBinding(key.WithKeys("tab", "l", "right"), key.WithHelp("tab", "pane right")),
-		Top:      key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "first")),
-		Bottom:   key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "last")),
-		PageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
-		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
-		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", "open")),
-		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rescan")),
-		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", i18n.T("key.up"))),
+		Down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", i18n.T("key.down"))),
+		Prev:     key.NewBinding(key.WithKeys("shift+tab", "h", "left"), key.WithHelp("←/h", i18n.T("key.pane_left"))),
+		Next:     key.NewBinding(key.WithKeys("tab", "l", "right"), key.WithHelp("tab", i18n.T("key.pane_right"))),
+		Top:      key.NewBinding(key.WithKeys("g"), key.WithHelp("g", i18n.T("key.first"))),
+		Bottom:   key.NewBinding(key.WithKeys("G"), key.WithHelp("G", i18n.T("key.last"))),
+		PageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", i18n.T("key.page_up"))),
+		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", i18n.T("key.page_down"))),
+		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", i18n.T("key.open"))),
+		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", i18n.T("key.rescan"))),
+		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
+		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
 	}
+}
+
+// pluralWord picks the localized noun form for n ("word.rom" → ROM/ROMs…).
+func pluralWord(n int, key string) string {
+	return i18n.Word(n, i18n.T(key+".one"), i18n.T(key+".few"), i18n.T(key+".many"))
 }
 
 // ShortHelp implements help.KeyMap (unused: only full help is shown).
@@ -140,7 +146,7 @@ func (m *Model) setGames(games []rom.Game) {
 		counts[g.ConsoleID]++
 		names[g.ConsoleID] = g.ConsoleName
 	}
-	m.rows = []ConsoleRow{{ID: "all", Name: "All consoles", Count: len(games)}}
+	m.rows = []ConsoleRow{{ID: "all", Name: i18n.T("row.all"), Count: len(games)}}
 	for _, c := range rom.Consoles {
 		if n, ok := counts[c.ID]; ok {
 			m.rows = append(m.rows, ConsoleRow{ID: c.ID, Name: c.Name, Short: c.Short, Count: n})
@@ -148,7 +154,7 @@ func (m *Model) setGames(games []rom.Game) {
 	}
 	// Keep unknown consoles (if any) at the end instead of dropping them.
 	if n, ok := counts["unknown"]; ok {
-		m.rows = append(m.rows, ConsoleRow{ID: "unknown", Name: "Unknown", Short: "???", Count: n})
+		m.rows = append(m.rows, ConsoleRow{ID: "unknown", Name: i18n.T("row.unknown"), Short: "???", Count: n})
 	}
 	if m.consCur >= len(m.rows) {
 		m.consCur = 0
@@ -203,9 +209,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rescanMsg:
 		m.setGames(msg.games)
 		if len(msg.errs) > 0 {
-			m.status = fmt.Sprintf("%d ROMs, %d errors", len(msg.games), len(msg.errs))
+			m.status = i18n.T("status.rescan_err",
+				len(msg.games), pluralWord(len(msg.games), "word.rom"),
+				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
 		} else {
-			m.status = fmt.Sprintf("rescan: %d ROMs", len(msg.games))
+			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
 		}
 		m.sizeMeta()
 		m.refreshMeta()
@@ -316,7 +324,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.gameCur = max(len(m.filtered)-1, 0)
 			m.refreshMeta()
 		case key.Matches(msg, k.Rescan):
-			m.status = "scanning " + m.romDir + " …"
+			m.status = i18n.T("status.scanning", m.romDir)
 			return m, m.rescanCmd()
 		case key.Matches(msg, k.Select):
 			m.focus = PaneMeta
@@ -336,14 +344,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, k.Bottom):
 			m.meta.GotoBottom()
 		case key.Matches(msg, k.Rescan):
-			m.status = "scanning " + m.romDir + " …"
+			m.status = i18n.T("status.scanning", m.romDir)
 			return m, m.rescanCmd()
 		}
 	}
 
 	// Rescan is global: allow it from the consoles pane too.
 	if key.Matches(msg, k.Rescan) {
-		m.status = "scanning " + m.romDir + " …"
+		m.status = i18n.T("status.scanning", m.romDir)
 		return m, m.rescanCmd()
 	}
 	return m, nil
@@ -406,7 +414,7 @@ func (m Model) layout() (cw, gw, mw int) {
 // View implements tea.Model.
 func (m Model) View() string {
 	if !m.ready {
-		return "cartridge: waiting for terminal size…"
+		return i18n.T("ui.waiting")
 	}
 	cw, gw, mw := m.layout()
 	left := m.renderConsoles(cw)
@@ -453,7 +461,7 @@ func styledRow(plain string) string {
 }
 
 func (m Model) renderConsoles(w int) string {
-	lines := []string{titleFor("CONSOLES", m.focus == PaneConsoles, w)}
+	lines := []string{titleFor(i18n.T("pane.consoles"), m.focus == PaneConsoles, w)}
 	visible := max(m.bodyH()-1, 1)
 	start := clamp(m.consCur-visible/2, 0, max(len(m.rows)-visible, 0))
 	for i := start; i < min(start+visible, len(m.rows)); i++ {
@@ -471,13 +479,13 @@ func (m Model) renderConsoles(w int) string {
 }
 
 func (m Model) renderGames(w int) string {
-	title := fmt.Sprintf("GAMES (%d)", len(m.filtered))
+	title := i18n.T("games.title.all", len(m.filtered))
 	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
-		title = fmt.Sprintf("GAMES — %s (%d)", m.rows[m.consCur].Short, len(m.filtered))
+		title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
 	}
 	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
 	if len(m.filtered) == 0 {
-		lines = append(lines, infoStyle.Render(fit("empty — press r", w)))
+		lines = append(lines, infoStyle.Render(fit(i18n.T("games.empty"), w)))
 		return m.column(lines, w, 1, 1)
 	}
 	visible := max(m.bodyH()-1, 1)
@@ -493,7 +501,7 @@ func (m Model) renderGames(w int) string {
 }
 
 func (m Model) renderMetaPane(w int) string {
-	lines := []string{titleFor("METADATA", m.focus == PaneMeta, w)}
+	lines := []string{titleFor(i18n.T("pane.meta"), m.focus == PaneMeta, w)}
 	for _, ln := range strings.Split(m.meta.View(), "\n") {
 		lines = append(lines, ln)
 	}
@@ -506,7 +514,7 @@ func (m Model) renderMetaPane(w int) string {
 func (m Model) renderMeta() string {
 	g := m.selected()
 	if g == nil {
-		return infoStyle.Render("No game selected.")
+		return infoStyle.Render(i18n.T("meta.none"))
 	}
 	w := max(m.meta.Width, 20)
 	var b strings.Builder
@@ -523,22 +531,22 @@ func (m Model) renderMeta() string {
 		b.WriteString(metaVal.Render(ln) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(metaKey.Render("id") + metaID.Render(g.ShortID()) + "\n")
+	b.WriteString(metaKey.Render(i18n.T("meta.id")) + metaID.Render(g.ShortID()) + "\n")
 	for _, ln := range wrapSoft(g.ID, max(w-4, 10)) {
 		b.WriteString(dim("    "+ln) + "\n")
 	}
-	kv("console", fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID))
+	kv(i18n.T("meta.console"), fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID))
 	if g.Region != "" {
-		kv("region", g.Region)
+		kv(i18n.T("meta.region"), g.Region)
 	}
 	if len(g.Tags) > 0 {
-		kv("tags", strings.Join(g.Tags, ", "))
+		kv(i18n.T("meta.tags"), strings.Join(g.Tags, ", "))
 	}
-	kv("size", fmt.Sprintf("%d bytes (%.2f MiB)", g.Size, float64(g.Size)/(1<<20)))
+	kv(i18n.T("meta.size"), i18n.T("meta.size.fmt", g.Size, pluralWord(int(g.Size), "word.byte"), float64(g.Size)/(1<<20)))
 	b.WriteString("\n")
-	kv("file", g.Path)
+	kv(i18n.T("meta.file"), g.Path)
 	if g.Inner != "" {
-		kv("inner", g.Inner)
+		kv(i18n.T("meta.inner"), g.Inner)
 	}
 	return b.String()
 }
@@ -555,8 +563,10 @@ func (m Model) renderHelp() string {
 
 func (m Model) renderInfo() string {
 	left := brandBadge.Render(" cartridge ") +
-		infoStyle.Render(fmt.Sprintf("  %d ROMs • %d consoles • %s",
-			len(m.games), len(m.rows)-1, truncate(m.romDir, 40)))
+		infoStyle.Render("  "+i18n.T("bar.stats",
+			len(m.games), pluralWord(len(m.games), "word.rom"),
+			len(m.rows)-1, pluralWord(len(m.rows)-1, "word.console"),
+			truncate(m.romDir, 40)))
 
 	var context string
 	if m.status != "" {
@@ -569,7 +579,7 @@ func (m Model) renderInfo() string {
 	if right != "" {
 		right += " "
 	}
-	right += helpBadge.Render(" ? Help ")
+	right += helpBadge.Render(i18n.T("bar.help"))
 
 	gap := max(m.contentW()-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
 	return left + strings.Repeat(" ", gap) + right

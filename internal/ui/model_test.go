@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"cartridge/internal/i18n"
 	"cartridge/internal/rom"
 )
 
@@ -153,6 +154,33 @@ func TestConsolePageUpDown(t *testing.T) {
 	m = out.(Model)
 	if m.rows[m.consCur].ID != "all" {
 		t.Fatalf("expected all row after pgup, got %q", m.rows[m.consCur].ID)
+	}
+}
+
+func TestRussianRender(t *testing.T) {
+	prev := i18n.Get()
+	i18n.Set(i18n.Ru)
+	defer i18n.Set(prev)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	view := m.View()
+	for _, want := range []string{
+		"КОНСОЛИ", "ИГРЫ", "МЕТАДАННЫЕ",
+		"Все консоли", "Помощь", "1 байт", "МиБ",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("ru view missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "CONSOLES") {
+		t.Fatalf("ru view leaked english\n%s", view)
+	}
+	// Full help above the bar is translated too.
+	out, _ := m.Update(keyMsg("?"))
+	view = out.(Model).View()
+	for _, want := range []string{"рескан", "выход", "открыть"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("ru help missing %q\n%s", want, view)
+		}
 	}
 }
 
