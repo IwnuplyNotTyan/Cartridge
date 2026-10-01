@@ -11,8 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"cartridge/internal/config"
+	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
 	"cartridge/internal/library"
+	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 	"cartridge/internal/ui"
 )
@@ -65,6 +67,8 @@ func main() {
 	lib := flag.String("library", "", i18n.T("flag.library"))
 	lang := flag.String("lang", "", i18n.T("flag.lang"))
 	cfgPath := flag.String("config", "", i18n.T("flag.config"))
+	recipesPath := flag.String("recipes", "", i18n.T("flag.recipes"))
+	recipeExample := flag.Bool("recipe-example", false, i18n.T("flag.recipe_example"))
 	printOnly := flag.Bool("print", false, i18n.T("flag.print"))
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "%s\n%s\n\n",
@@ -73,12 +77,28 @@ func main() {
 	}
 	flag.Parse()
 
-	cfg, err := config.Resolve(*dir, *lib, *lang, *cfgPath)
+	if *recipeExample {
+		fmt.Printf("%s", emulate.ExampleJSON())
+		return
+	}
+
+	cfg, err := config.Resolve(*dir, *lib, *lang, *cfgPath, *recipesPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
 		os.Exit(1)
 	}
 	i18n.Set(cfg.Lang)
+
+	recipes, err := emulate.Load(cfg.Recipes)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.recipes_fail", err))
+		os.Exit(1)
+	}
+	play, err := playtime.Load(playtime.DefaultPath(cfg.Library))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
+		os.Exit(1)
+	}
 
 	games, errs := rom.ScanDir(cfg.RomDir)
 	for _, err := range errs {
@@ -103,7 +123,8 @@ func main() {
 		return
 	}
 
-	m := ui.New(games, cfg.RomDir, cfg.Library)
+	m := ui.New(games, cfg.RomDir, cfg.Library,
+		ui.WithRecipes(recipes), ui.WithPlaytime(play))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)

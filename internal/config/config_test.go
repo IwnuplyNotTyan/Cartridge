@@ -17,6 +17,7 @@ func cleanEnv(t *testing.T, home string) {
 	t.Setenv(EnvLibrary, "")
 	t.Setenv(EnvLang, "")
 	t.Setenv(EnvConfig, "")
+	t.Setenv(EnvRecipes, "")
 	t.Setenv("LANG", "en_US.UTF-8")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LANGUAGE", "")
@@ -26,7 +27,7 @@ func cleanEnv(t *testing.T, home string) {
 func TestResolveDefaults(t *testing.T) {
 	home := t.TempDir()
 	cleanEnv(t, home)
-	c, err := Resolve("", "", "", "")
+	c, err := Resolve("", "", "", "", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestResolvePrecedence(t *testing.T) {
 	}
 
 	// File values apply when nothing else is set.
-	c, err := Resolve("", "", "", "")
+	c, err := Resolve("", "", "", "", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestResolvePrecedence(t *testing.T) {
 	// Env beats file.
 	t.Setenv(EnvDir, "/env/roms")
 	t.Setenv(EnvLang, "en")
-	c, err = Resolve("", "", "", "")
+	c, err = Resolve("", "", "", "", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -82,7 +83,7 @@ func TestResolvePrecedence(t *testing.T) {
 	}
 
 	// Flags beat env.
-	c, err = Resolve("/flag/roms", "", "ru", "")
+	c, err = Resolve("/flag/roms", "", "ru", "", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestResolvePrecedence(t *testing.T) {
 func TestResolveMissingExplicitConfig(t *testing.T) {
 	home := t.TempDir()
 	cleanEnv(t, home)
-	if _, err := Resolve("", "", "", filepath.Join(home, "nope.json")); err == nil {
+	if _, err := Resolve("", "", "", filepath.Join(home, "nope.json"), ""); err == nil {
 		t.Fatalf("expected error for missing explicit config")
 	}
 }
@@ -106,15 +107,43 @@ func TestResolveBadConfig(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("{oops"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve("", "", "", bad); err == nil {
+	if _, err := Resolve("", "", "", bad, ""); err == nil {
 		t.Fatalf("expected parse error")
+	}
+}
+
+func TestResolveRecipesPath(t *testing.T) {
+	home := t.TempDir()
+	cleanEnv(t, home)
+	c, err := Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := filepath.Join(home, ".config", "cartridge", "recipes.json")
+	if c.Recipes != want {
+		t.Fatalf("Recipes = %q, want %q", c.Recipes, want)
+	}
+	t.Setenv(EnvRecipes, "/env/recipes.json")
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.Recipes != "/env/recipes.json" {
+		t.Fatalf("env recipes broken: %+v", c)
+	}
+	c, err = Resolve("", "", "", "", "/flag/recipes.json")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.Recipes != "/flag/recipes.json" {
+		t.Fatalf("flag recipes broken: %+v", c)
 	}
 }
 
 func TestExpandTilde(t *testing.T) {
 	home := t.TempDir()
 	cleanEnv(t, home)
-	c, err := Resolve("~/roms", "", "", "")
+	c, err := Resolve("~/roms", "", "", "", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

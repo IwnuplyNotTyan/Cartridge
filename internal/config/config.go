@@ -19,6 +19,7 @@ const (
 	EnvLibrary = "CARTRIDGE_LIBRARY"
 	EnvLang    = "CARTRIDGE_LANG"
 	EnvConfig  = "CARTRIDGE_CONFIG"
+	EnvRecipes = "CARTRIDGE_RECIPES"
 )
 
 // File is the on-disk JSON config (~/.config/cartridge/config.json).
@@ -26,6 +27,7 @@ type File struct {
 	RomDir  string `json:"rom_dir"`
 	Library string `json:"library"`
 	Lang    string `json:"lang"`
+	Recipes string `json:"recipes"`
 }
 
 // Config is the fully resolved runtime configuration.
@@ -33,7 +35,20 @@ type Config struct {
 	RomDir     string
 	Library    string
 	Lang       i18n.Lang
+	Recipes    string
 	ConfigFile string // file actually read ("" when none)
+}
+
+// DefaultRecipesPath returns the standard recipes file location.
+func DefaultRecipesPath() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "cartridge", "recipes.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "cartridge", "recipes.json")
 }
 
 // DefaultFilePath returns the standard config file location.
@@ -69,7 +84,7 @@ func LoadFile(path string) (File, error) {
 
 // Resolve merges flags, env, file and defaults into a Config.
 // Empty flag values mean "not set".
-func Resolve(dirFlag, libFlag, langFlag, cfgFlag string) (Config, error) {
+func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, error) {
 	cfgPath := firstNonEmpty(cfgFlag, os.Getenv(EnvConfig), DefaultFilePath())
 	explicit := cfgFlag != "" || os.Getenv(EnvConfig) != ""
 	var (
@@ -101,6 +116,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag string) (Config, error) {
 		RomDir:     expandPath(firstNonEmpty(dirFlag, os.Getenv(EnvDir), f.RomDir, defaultRomDir())),
 		Library:    expandPath(firstNonEmpty(libFlag, os.Getenv(EnvLibrary), f.Library, library.DefaultPath())),
 		Lang:       lang,
+		Recipes:    expandPath(firstNonEmpty(recipesFlag, os.Getenv(EnvRecipes), f.Recipes, DefaultRecipesPath())),
 		ConfigFile: used,
 	}, nil
 }

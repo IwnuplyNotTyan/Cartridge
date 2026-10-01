@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // Lang is a UI language code.
@@ -84,6 +85,23 @@ func T(key string, args ...any) string {
 		return tmpl
 	}
 	return fmt.Sprintf(tmpl, args...)
+}
+
+// Duration formats d compactly using localized units ("2 h 15 min").
+func Duration(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 0 {
+		s = 0
+	}
+	h, m, sec := s/3600, (s%3600)/60, s%60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%d %s %d %s", h, T("dur.h"), m, T("dur.min"))
+	case m > 0:
+		return fmt.Sprintf("%d %s %d %s", m, T("dur.min"), sec, T("dur.sec"))
+	default:
+		return fmt.Sprintf("%d %s", sec, T("dur.sec"))
+	}
 }
 
 // Word picks the plural form of a noun for n using the current language

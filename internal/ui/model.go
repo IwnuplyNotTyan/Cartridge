@@ -6,6 +6,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -15,7 +16,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/charmtone"
 
+	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
+	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 )
 
@@ -40,6 +43,7 @@ type keyMap struct {
 	PageDown key.Binding
 	Select   key.Binding
 	Rescan   key.Binding
+	Launch   key.Binding
 	Help     key.Binding
 	Quit     key.Binding
 }
@@ -56,6 +60,7 @@ func newKeyMap() keyMap {
 		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", i18n.T("key.page_down"))),
 		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", i18n.T("key.open"))),
 		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", i18n.T("key.rescan"))),
+		Launch:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", i18n.T("key.launch"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
 	}
@@ -73,7 +78,7 @@ func (k keyMap) ShortHelp() []key.Binding { return []key.Binding{k.Help, k.Quit}
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Top, k.Bottom},
-		{k.Prev, k.Next, k.Select},
+		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan},
 		{k.Help, k.Quit},
 	}
@@ -113,10 +118,33 @@ type Model struct {
 	romDir  string
 	libPath string
 	status  string
+
+	recipes []emulate.Recipe
+	play    *playtime.Store
+}
+
+// launchDoneMsg reports an emulator run back to the model.
+type launchDoneMsg struct {
+	gameID string
+	dur    time.Duration
+	err    error
+}
+
+// Option configures the model.
+type Option func(*Model)
+
+// WithRecipes sets emulator launch recipes.
+func WithRecipes(r []emulate.Recipe) Option {
+	return func(m *Model) { m.recipes = r }
+}
+
+// WithPlaytime sets the play-time store.
+func WithPlaytime(s *playtime.Store) Option {
+	return func(m *Model) { m.play = s }
 }
 
 // New builds the model from an initial scan.
-func New(games []rom.Game, romDir, libPath string) Model {
+func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 	m := Model{
 		romDir:  romDir,
 		libPath: libPath,
@@ -134,6 +162,9 @@ func New(games []rom.Game, romDir, libPath string) Model {
 	m.help.Styles.FullDesc = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Squid.Hex()))
 	m.help.Styles.FullSeparator = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
 	m.help.Styles.Ellipsis = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
+	for _, opt := range opts {
+		opt(&m)
+	}
 	m.setGames(games)
 	return m
 }
@@ -219,10 +250,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshMeta()
 		return m, nil
 
+	case launchDoneMsg:
+		if msg.err != nil {
+			m.status = i18n.T("status.launch_fail", msg.err)
+		} else {
+			if m.play != nil {
+				m.play.Add(msg.gameID, msg.dur)
+				if err := m.play.Save(); err != nil {
+					m.status = i18n.T("status.save_fail", err)
+					m.refreshMeta()
+					return m, nil
+				}
+			}
+			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
+		}
+		m.refreshMeta()
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	}
 	return m, nil
+}
+
+// launchSelected starts the emulator for the selected game via its recipe.
+// The TUI is suspended while the emulator runs; the session is timed.
+func (m Model) launchSelected() (tea.Model, tea.Cmd) {
+	g := m.selected()
+	if g == nil {
+		return m, nil
+	}
+	game := *g
+	r := emulate.Match(m.recipes, game)
+	if r == nil {
+		m.status = i18n.T("status.no_recipe", game.Title)
+		return m, nil
+	}
+	cmd, err := r.Command(game)
+	if err != nil {
+		m.status = i18n.T("status.launch_fail", err)
+		return m, nil
+	}
+	m.status = i18n.T("status.launching", game.Title)
+	start := time.Now()
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return launchDoneMsg{gameID: game.ID, dur: time.Since(start), err: err}
+	})
 }
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -235,6 +308,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help.ShowAll = m.showHelp
 		m.sizeMeta()
 		return m, nil
+	case key.Matches(msg, k.Launch):
+		return m.launchSelected()
 	}
 	if m.showHelp && msg.String() == "esc" {
 		m.showHelp = false
@@ -519,11 +594,11 @@ func (m Model) renderMeta() string {
 	w := max(m.meta.Width, 20)
 	var b strings.Builder
 	kv := func(k, v string) {
-		for i, ln := range wrapSoft(v, max(w-9, 10)) {
+		for i, ln := range wrapSoft(v, max(w-metaKeyWidth, 10)) {
 			if i == 0 {
 				b.WriteString(metaKey.Render(k) + metaVal.Render(ln) + "\n")
 			} else {
-				b.WriteString(strings.Repeat(" ", 9) + metaVal.Render(ln) + "\n")
+				b.WriteString(strings.Repeat(" ", metaKeyWidth) + metaVal.Render(ln) + "\n")
 			}
 		}
 	}
@@ -548,7 +623,39 @@ func (m Model) renderMeta() string {
 	if g.Inner != "" {
 		kv(i18n.T("meta.inner"), g.Inner)
 	}
+	b.WriteString("\n")
+	if r := emulate.Match(m.recipes, *g); r != nil {
+		kv(i18n.T("meta.recipe"), r.Name)
+		kv(i18n.T("meta.cheats"), featText(r.Cheats.Supported, r.Cheats.Path, *g, r))
+		kv(i18n.T("meta.achievements"), featText(r.Achievements.Supported, r.Achievements.Note, *g, r))
+		kv(i18n.T("meta.mods"), featText(r.Mods.Supported, r.Mods.Path, *g, r))
+	} else {
+		kv(i18n.T("meta.recipe"), i18n.T("recipe.none"))
+	}
+	if m.play != nil {
+		if st, ok := m.play.Get(g.ID); ok {
+			kv(i18n.T("meta.played"), i18n.T("meta.played.fmt",
+				i18n.Duration(st.Total()), st.Sessions,
+				pluralWord(st.Sessions, "word.session"),
+				st.LastPlayed.Format("2006-01-02 15:04")))
+		}
+	}
 	return b.String()
+}
+
+// featText renders a feature row: yes/no plus an expanded path or note.
+func featText(supported bool, extra string, g rom.Game, r *emulate.Recipe) string {
+	s := i18n.T("feat.no")
+	if supported {
+		s = i18n.T("feat.yes")
+	}
+	if extra != "" {
+		if expanded, err := r.Expand(extra, g); err == nil {
+			extra = expanded
+		}
+		s += " — " + extra
+	}
+	return s
 }
 
 func dim(s string) string { return infoStyle.Render(s) }

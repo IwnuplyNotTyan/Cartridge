@@ -21,6 +21,9 @@ var (
 	idColor  = tone(charmtone.Tang) // stable ID
 )
 
+// metaKeyWidth fits the longest meta label ("achievements") plus a gap.
+const metaKeyWidth = 13
+
 var (
 	appStyle    = lipgloss.NewStyle().Margin(appGap)
 	sepStyle    = lipgloss.NewStyle().Foreground(divider)
@@ -32,7 +35,7 @@ var (
 	infoStyle   = lipgloss.NewStyle().Foreground(dimText)
 	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(tone(charmtone.Butter)).Bold(true)
 	curStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(9)
+	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(metaKeyWidth)
 	metaVal     = lipgloss.NewStyle().Foreground(brightTx)
 	metaID      = lipgloss.NewStyle().Foreground(idColor).Bold(true)
 )

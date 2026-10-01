@@ -1,15 +1,22 @@
 package ui
 
 import (
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
+	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 )
+
+var errTestBoom = errors.New("boom")
 
 func sampleGames() []rom.Game {
 	return []rom.Game{
@@ -181,6 +188,64 @@ func TestRussianRender(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ru help missing %q\n%s", want, view)
 		}
+	}
+}
+
+func TestLaunchNoRecipe(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	out, cmd := m.Update(keyMsg("x"))
+	m = out.(Model)
+	if cmd != nil {
+		t.Fatalf("expected no command without recipes")
+	}
+	if !strings.Contains(m.status, "no recipe") {
+		t.Fatalf("status = %q, want no-recipe hint", m.status)
+	}
+}
+
+func TestLaunchRecordsPlaytime(t *testing.T) {
+	play, err := playtime.Load(filepath.Join(t.TempDir(), "playtime.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipes := []emulate.Recipe{{
+		Name: "test-nes", Consoles: []string{"nes"},
+		Emulator: "true", Args: []string{"{rom}"},
+		Cheats: emulate.Cheats{Supported: true, Path: "{emu_dir}/cheats/{title}.cht"},
+	}}
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes(recipes), WithPlaytime(play)))
+	out, cmd := m.Update(keyMsg("x"))
+	m = out.(Model)
+	if cmd == nil {
+		t.Fatalf("expected launch command")
+	}
+	if !strings.Contains(m.status, "starting") {
+		t.Fatalf("status = %q, want launching hint", m.status)
+	}
+
+	out, _ = m.Update(launchDoneMsg{gameID: "aaa111", dur: 90 * time.Second})
+	m = out.(Model)
+	if !strings.Contains(m.status, "played 1 min 30 s") {
+		t.Fatalf("status = %q, want played duration", m.status)
+	}
+	st, ok := play.Get("aaa111")
+	if !ok || st.Sessions != 1 || st.TotalSeconds != 90 {
+		t.Fatalf("playtime = %+v ok=%v", st, ok)
+	}
+	view := m.View()
+	for _, want := range []string{"test-nes", "played", "1 min 30 s", "cheats"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestLaunchDoneError(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	out, _ := m.Update(launchDoneMsg{gameID: "aaa111", dur: time.Second, err: errTestBoom})
+	if got := out.(Model).status; !strings.Contains(got, "launch failed") {
+		t.Fatalf("status = %q, want launch failure", got)
 	}
 }
 
