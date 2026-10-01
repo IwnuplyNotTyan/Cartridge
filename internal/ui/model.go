@@ -1,6 +1,6 @@
 // Package ui implements the 3-column cartridge browser:
 // consoles | games | metadata, separated by grey dividers,
-// with info + hints in the bottom bar and help on "?".
+// with bubbles full help above the bottom info bar on "?".
 package ui
 
 import (
@@ -58,7 +58,7 @@ func newKeyMap() keyMap {
 	}
 }
 
-// ShortHelp implements help.KeyMap.
+// ShortHelp implements help.KeyMap (unused: only full help is shown).
 func (k keyMap) ShortHelp() []key.Binding { return []key.Binding{k.Help, k.Quit} }
 
 // FullHelp implements help.KeyMap.
@@ -184,6 +184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.ready = true
+		m.help.SetWidth(msg.Width)
 		m.sizeMeta()
 		m.refreshMeta()
 		return m, nil
@@ -212,12 +213,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, k.Help):
 		m.showHelp = !m.showHelp
+		m.help.ShowAll = m.showHelp
+		m.sizeMeta()
 		return m, nil
 	}
-	if m.showHelp {
-		if msg.String() == "esc" {
-			m.showHelp = false
-		}
+	if m.showHelp && msg.String() == "esc" {
+		m.showHelp = false
+		m.help.ShowAll = false
+		m.sizeMeta()
 		return m, nil
 	}
 	switch {
@@ -341,12 +344,21 @@ func (m *Model) sizeMeta() {
 	m.meta.Height = max(m.bodyH()-1, 3) // one line for the METADATA title
 }
 
+func (m Model) helpView() string { return m.help.View(m.keys) }
+
+func (m Model) helpHeight() int {
+	if !m.showHelp {
+		return 0
+	}
+	return max(lipgloss.Height(m.helpView()), 1)
+}
+
 func (m Model) bodyH() int {
 	h := m.height
 	if h <= 0 {
 		h = 30
 	}
-	return max(h-2, 8) // single footer line + margin
+	return max(h-2-m.helpHeight(), 5) // full help + info bar + margin
 }
 
 // layout splits the screen into three column inner widths (no borders,
@@ -367,16 +379,18 @@ func (m Model) View() string {
 	if !m.ready {
 		return "cartridge: waiting for terminal size…"
 	}
-	var body string
+	cw, gw, mw := m.layout()
+	left := m.renderConsoles(cw)
+	mid := m.renderGames(gw)
+	right := m.renderMetaPane(mw)
+	sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
 	if m.showHelp {
-		body = m.renderHelpBox()
-	} else {
-		cw, gw, mw := m.layout()
-		left := m.renderConsoles(cw)
-		mid := m.renderGames(gw)
-		right := m.renderMetaPane(mw)
-		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
-		body = lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+		return lipgloss.JoinVertical(lipgloss.Left,
+			body,
+			m.renderHelp(),
+			m.renderInfo(),
+		)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		body,
@@ -503,11 +517,12 @@ func wrapPlain(s string, w int, indent string) []string {
 	return out
 }
 
-func (m Model) renderHelpBox() string {
-	box := titleFor("KEYS  (?/esc to close)", true, 52) + "\n\n" +
-		m.help.FullHelpView(m.keys.FullHelp())
-	boxed := helpBox.Render(box)
-	return lipgloss.Place(m.width, m.bodyH(), lipgloss.Center, lipgloss.Center, boxed)
+// renderHelp is the bubbles full-help strip right above the bottom bar.
+func (m Model) renderHelp() string {
+	if !m.showHelp {
+		return ""
+	}
+	return m.help.FullHelpView(m.keys.FullHelp())
 }
 
 func (m Model) renderInfo() string {

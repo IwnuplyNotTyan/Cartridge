@@ -83,19 +83,29 @@ func TestConsoleFilterAndFocus(t *testing.T) {
 
 func TestHelpToggle(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	// No short help above the bar by default.
+	if view := m.View(); strings.Contains(view, "move up") {
+		t.Fatalf("default view must not show help details\n%s", view)
+	}
 	out, _ := m.Update(keyMsg("?"))
 	m = out.(Model)
 	if !m.showHelp {
-		t.Fatalf("expected help overlay after ?")
+		t.Fatalf("expected full help after ?")
 	}
 	view := m.View()
-	for _, want := range []string{"KEYS", "move up", "rescan", "quit"} {
+	for _, want := range []string{"move up", "rescan", "quit", "CONSOLES", "GAMES", "METADATA"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("help view missing %q\n%s", want, view)
 		}
 	}
+	// Full help must sit above the bottom bar: columns stay, bar stays last.
+	lines := strings.Split(view, "\n")
+	last := lines[len(lines)-1]
+	if !strings.Contains(last, "cartridge") {
+		t.Fatalf("bottom bar must stay last, got %q\n%s", last, view)
+	}
 	out, _ = m.Update(keyMsg("?"))
 	if out.(Model).showHelp {
-		t.Fatalf("expected help overlay to close on second ?")
+		t.Fatalf("expected full help to collapse on second ?")
 	}
 }

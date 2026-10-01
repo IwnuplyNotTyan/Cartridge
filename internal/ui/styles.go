@@ -24,13 +24,9 @@ var (
 	infoStyle   = lipgloss.NewStyle().Foreground(dimText)
 	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("230")).Bold(true)
 	curStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(9)
-	metaVal     = lipgloss.NewStyle().Foreground(brightTx)
-	metaID      = lipgloss.NewStyle().Foreground(idColor).Bold(true)
-	helpBox     = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(divider).
-			Padding(1, 2)
+	metaKey = lipgloss.NewStyle().Foreground(dimText).Width(9)
+	metaVal = lipgloss.NewStyle().Foreground(brightTx)
+	metaID  = lipgloss.NewStyle().Foreground(idColor).Bold(true)
 )
 
 func titleFor(name string, focused bool, w int) string {
