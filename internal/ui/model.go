@@ -669,27 +669,32 @@ func (m Model) renderHelp() string {
 }
 
 func (m Model) renderInfo() string {
+	// Весь бар залит серым (barStyle): бейджи остаются цветными модулями,
+	// а текст и пустое пространство между ними — на сером фоне.
 	left := brandBadge.Render(" cartridge ") +
-		infoStyle.Render("  "+i18n.T("bar.stats",
+		barStyle.Render("  "+i18n.T("bar.stats",
 			len(m.games), pluralWord(len(m.games), "word.rom"),
 			len(m.rows)-1, pluralWord(len(m.rows)-1, "word.console"),
 			truncate(m.romDir, 40)))
 
 	var context string
 	if m.status != "" {
-		context = infoStyle.Render(truncate(m.status, 40))
+		context = barStyle.Render(truncate(m.status, 40))
 	} else if g := m.selected(); g != nil {
-		context = infoStyle.Render(g.ShortID()) + infoStyle.Render(" • ") +
+		context = barStyle.Render(g.ShortID()+" • ") +
 			titleBadge.Render(" "+truncate(g.Title, 32)+" ")
 	}
 	right := context
-	if right != "" {
-		right += " "
-	}
 	right += helpBadge.Render(i18n.T("bar.help"))
 
-	gap := max(m.contentW()-lipgloss.Width(left)-lipgloss.Width(right)-1, 1)
-	return left + strings.Repeat(" ", gap) + right
+	gap := max(m.contentW()-lipgloss.Width(left)-lipgloss.Width(right), 1)
+	gapStr := barStyle.Render(strings.Repeat(" ", gap))
+	bar := left + gapStr + right
+	// Добиваем бар серым до полной ширины, чтобы не осталось незакрашенных хвостов.
+	if pad := m.contentW() - lipgloss.Width(bar); pad > 0 {
+		bar += barStyle.Render(strings.Repeat(" ", pad))
+	}
+	return bar
 }
 
 func clamp(v, lo, hi int) int {
