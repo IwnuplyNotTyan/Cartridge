@@ -75,6 +75,17 @@ type Recipe struct {
 	Cores map[string][]string `json:"cores,omitempty"`
 }
 
+// CoresFor returns the core list for a console, lookup case-insensitive.
+// An empty result means the recipe covers no core for this console.
+func (r Recipe) CoresFor(console string) []string {
+	for id, cores := range r.Cores {
+		if strings.EqualFold(id, console) {
+			return cores
+		}
+	}
+	return nil
+}
+
 // CoreFor returns the default core for a console (the first listed).
 // Lookup is case-insensitive; an error means the recipe covers no core
 // for this console.
@@ -136,27 +147,48 @@ func Load(path string) ([]Recipe, error) {
 func Match(recipes []Recipe, g rom.Game) *Recipe {
 	ext := gameExt(g)
 	for i := range recipes {
-		r := &recipes[i]
-		if len(r.Games) == 0 && len(r.Consoles) == 0 && len(r.Extensions) == 0 {
-			return r
-		}
-		for _, id := range r.Games {
-			if id == g.ID || id == g.ShortID() {
-				return r
-			}
-		}
-		for _, c := range r.Consoles {
-			if strings.EqualFold(c, g.ConsoleID) {
-				return r
-			}
-		}
-		for _, e := range r.Extensions {
-			if normExt(e) == ext {
-				return r
-			}
+		if recipeMatches(&recipes[i], g, ext) {
+			return &recipes[i]
 		}
 	}
 	return nil
+}
+
+// MatchAll returns every recipe matching g in list order.
+// Useful to offer alternatives to the hierarchy winner.
+func MatchAll(recipes []Recipe, g rom.Game) []*Recipe {
+	var out []*Recipe
+	ext := gameExt(g)
+	for i := range recipes {
+		if recipeMatches(&recipes[i], g, ext) {
+			out = append(out, &recipes[i])
+		}
+	}
+	return out
+}
+
+// recipeMatches reports whether r applies to g: a scopeless recipe matches
+// everything, otherwise game ID/ShortID, console or extension must hit.
+func recipeMatches(r *Recipe, g rom.Game, ext string) bool {
+	if len(r.Games) == 0 && len(r.Consoles) == 0 && len(r.Extensions) == 0 {
+		return true
+	}
+	for _, id := range r.Games {
+		if id == g.ID || id == g.ShortID() {
+			return true
+		}
+	}
+	for _, c := range r.Consoles {
+		if strings.EqualFold(c, g.ConsoleID) {
+			return true
+		}
+	}
+	for _, e := range r.Extensions {
+		if normExt(e) == ext {
+			return true
+		}
+	}
+	return false
 }
 
 // Command builds the emulator process for g, expanding placeholders.

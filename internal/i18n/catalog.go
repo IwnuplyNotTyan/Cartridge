@@ -20,6 +20,8 @@ var catalog = map[Lang]map[string]string{
 		"key.close":      "close",
 		"key.tab":        "tab",
 		"key.save":       "save",
+		"key.copy":       "copy",
+		"key.alt":        "cycle option",
 
 		"pane.consoles":      "CONSOLES",
 		"pane.games":         "GAMES",
@@ -41,6 +43,7 @@ var catalog = map[Lang]map[string]string{
 		"meta.size.fmt": "%d %s (%.2f MiB)",
 
 		"meta.recipe":       "recipe",
+		"meta.core":         "core",
 		"meta.played":       "played",
 		"meta.played.fmt":   "%s • %d %s • last %s",
 		"meta.cheats":       "cheats",
@@ -76,6 +79,8 @@ var catalog = map[Lang]map[string]string{
 		"status.rescan":      "rescan: %d %s",
 		"status.rescan_err":  "%d %s, %d %s",
 		"status.no_recipe":   "no recipe for %s",
+		"status.copied":      "copied %s",
+		"status.copy_empty":  "nothing to copy",
 		"status.launching":   "starting %s …",
 		"status.launch_fail": "launch failed: %v",
 		"status.played":      "played %s",
@@ -161,6 +166,8 @@ var catalog = map[Lang]map[string]string{
 		"key.close":      "закрыть",
 		"key.tab":        "вкладка",
 		"key.save":       "сохранить",
+		"key.copy":       "скопировать",
+		"key.alt":        "другой вариант",
 
 		"pane.consoles":      "КОНСОЛИ",
 		"pane.games":         "ИГРЫ",
@@ -182,6 +189,7 @@ var catalog = map[Lang]map[string]string{
 		"meta.size.fmt": "%d %s (%.2f МиБ)",
 
 		"meta.recipe":       "рецепт",
+		"meta.core":         "ядро",
 		"meta.played":       "сыграно",
 		"meta.played.fmt":   "%s • %d %s • последний %s",
 		"meta.cheats":       "читы",
@@ -217,6 +225,8 @@ var catalog = map[Lang]map[string]string{
 		"status.rescan":      "рескан: %d %s",
 		"status.rescan_err":  "%d %s, %d %s",
 		"status.no_recipe":   "нет рецепта: %s",
+		"status.copied":      "скопировано %s",
+		"status.copy_empty":  "нечего копировать",
 		"status.launching":   "запускаю %s …",
 		"status.launch_fail": "не запустилось: %v",
 		"status.played":      "сыграно %s",

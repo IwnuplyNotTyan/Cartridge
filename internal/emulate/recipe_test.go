@@ -45,6 +45,42 @@ func TestMatchHierarchy(t *testing.T) {
 	}
 }
 
+func TestMatchAllOrder(t *testing.T) {
+	byExt := Recipe{Name: "by-ext", Extensions: []string{"nes"}, Emulator: "e1"}
+	byConsole := Recipe{Name: "by-console", Consoles: []string{"nes"}, Emulator: "e2"}
+	byGame := Recipe{Name: "by-game", Games: []string{"aaa111bbb222"}, Emulator: "e3"}
+	def := Recipe{Name: "default", Emulator: "e0"}
+
+	got := MatchAll([]Recipe{byExt, byConsole, byGame, def}, nesGame())
+	want := []string{"by-ext", "by-console", "by-game", "default"}
+	if len(got) != len(want) {
+		t.Fatalf("MatchAll = %d recipes, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Name != want[i] {
+			t.Fatalf("MatchAll[%d] = %q, want %q", i, got[i].Name, want[i])
+		}
+	}
+	other := nesGame()
+	other.ConsoleID = "snes"
+	other.Path = "/x/b.sfc"
+	if got := MatchAll([]Recipe{byExt, byConsole}, other); len(got) != 0 {
+		t.Fatalf("MatchAll must be empty, got %v", got)
+	}
+}
+
+func TestCoresFor(t *testing.T) {
+	r := Recipe{Name: "ra", Cores: map[string][]string{
+		"nes": {"a.so", "b.so"},
+	}}
+	if got := r.CoresFor("NES"); len(got) != 2 || got[1] != "b.so" {
+		t.Fatalf("CoresFor must ignore case: %+v", got)
+	}
+	if got := r.CoresFor("gba"); len(got) != 0 {
+		t.Fatalf("CoresFor(gba) must be empty: %+v", got)
+	}
+}
+
 func TestMatchShortIDAndInnerExt(t *testing.T) {
 	g := nesGame()
 	g.ID = "aaa111bbb222ccc333"

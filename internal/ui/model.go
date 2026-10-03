@@ -5,12 +5,15 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	lipglossv2 "charm.land/lipgloss/v2"
+	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,6 +21,7 @@ import (
 
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
+	"cartridge/internal/overrides"
 	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 )
@@ -45,6 +49,8 @@ type keyMap struct {
 	Rescan   key.Binding
 	Launch   key.Binding
 	Settings key.Binding
+	Copy     key.Binding
+	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
 }
@@ -63,6 +69,8 @@ func newKeyMap() keyMap {
 		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", i18n.T("key.rescan"))),
 		Launch:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", i18n.T("key.launch"))),
 		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("key.settings"))),
+		Copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", i18n.T("key.copy"))),
+		Alt:      key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", i18n.T("key.alt"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
 	}
@@ -82,7 +90,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
-		{k.Help, k.Quit},
+		{k.Copy, k.Alt, k.Help, k.Quit},
 	}
 }
 
@@ -92,6 +100,16 @@ type ConsoleRow struct {
 	Name  string
 	Short string
 	Count int
+}
+
+// metaRow is one navigable metadata row: copy holds the clipboard text,
+// kind is "recipe" or "core" on switchable rows, "sep" on blank separators.
+type metaRow struct {
+	kind  string
+	label string
+	lines []string
+	copy  string
+	sep   bool
 }
 
 type rescanMsg struct {
@@ -109,6 +127,8 @@ type Model struct {
 
 	focus    Pane
 	meta     viewport.Model
+	metaCur  int       // cursor over metaRows (separators skipped)
+	metaRows []metaRow // navigable metadata rows for copying/switching
 	keys     keyMap
 	help     help.Model
 	showHelp bool
@@ -122,7 +142,9 @@ type Model struct {
 	status  string
 
 	recipes []emulate.Recipe
-	play    *playtime.Store
+	// overrides persists per-game emulator/core picks from metadata (n/p).
+	overrides *overrides.Store
+	play      *playtime.Store
 
 	// Settings screen state. Only the bottom bar and help survive
 	// from the browser view; tabs sit on top.
@@ -168,6 +190,11 @@ func WithRecipes(r []emulate.Recipe) Option {
 // WithPlaytime sets the play-time store.
 func WithPlaytime(s *playtime.Store) Option {
 	return func(m *Model) { m.play = s }
+}
+
+// WithOverrides sets the per-game emulator/core choice store.
+func WithOverrides(s *overrides.Store) Option {
+	return func(m *Model) { m.overrides = s }
 }
 
 // WithBaseRecipes keeps the unpatched base recipes for the settings view.
@@ -267,6 +294,7 @@ func (m *Model) refilter() {
 	if m.gameCur >= len(m.filtered) {
 		m.gameCur = max(len(m.filtered)-1, 0)
 	}
+	m.metaCur = 0
 	m.refreshMeta()
 }
 
@@ -278,8 +306,235 @@ func (m Model) selected() *rom.Game {
 }
 
 func (m *Model) refreshMeta() {
-	m.meta.GotoTop()
-	m.meta.SetContent(m.renderMeta())
+	m.metaRows = m.buildMetaRows()
+	m.metaCur = clampMetaCur(m.metaRows, m.metaCur)
+	content, starts := m.renderMetaRows()
+	m.meta.SetContent(content)
+	m.metaFollowCursor(starts, strings.Count(content, "\n"))
+}
+
+// clampMetaCur keeps the cursor on a selectable row.
+func clampMetaCur(rows []metaRow, cur int) int {
+	if len(rows) == 0 {
+		return 0
+	}
+	if cur >= 0 && cur < len(rows) && !rows[cur].sep {
+		return cur
+	}
+	for i := range rows {
+		if !rows[i].sep {
+			return i
+		}
+	}
+	return 0
+}
+
+// metaFollowCursor scrolls the viewport so the cursor row stays visible.
+func (m *Model) metaFollowCursor(starts []int, total int) {
+	if len(m.metaRows) == 0 || len(starts) == 0 {
+		m.meta.SetYOffset(0)
+		return
+	}
+	cur := clamp(m.metaCur, 0, len(starts)-1)
+	start := starts[cur]
+	end := total - 1
+	if cur+1 < len(starts) {
+		end = starts[cur+1] - 1
+	}
+	h := max(m.meta.Height, 1)
+	switch {
+	case start < m.meta.YOffset:
+		m.meta.SetYOffset(start)
+	case end >= m.meta.YOffset+h:
+		m.meta.SetYOffset(end - h + 1)
+	}
+}
+
+// gameRecipe returns the effective recipe for g: a manually picked
+// alternative when set and still matching, otherwise the hierarchy winner.
+func (m Model) gameRecipe(g rom.Game) *emulate.Recipe {
+	alts := emulate.MatchAll(m.recipes, g)
+	if len(alts) == 0 {
+		return nil
+	}
+	if c, ok := m.overrides.Get(g.ID); ok {
+		for _, r := range alts {
+			if r.Name == c.Recipe {
+				return r
+			}
+		}
+	}
+	return alts[0]
+}
+
+// gameCore returns the selected core for g under r: a manually picked one
+// when set and still listed, otherwise the recipe default.
+// The list and the resolved index follow.
+func (m Model) gameCore(g rom.Game, r *emulate.Recipe) (string, []string, int) {
+	cs := r.CoresFor(g.ConsoleID)
+	if len(cs) == 0 {
+		return "", nil, 0
+	}
+	if c, ok := m.overrides.Get(g.ID); ok {
+		for i, core := range cs {
+			if core == c.Core {
+				return core, cs, i
+			}
+		}
+	}
+	return cs[0], cs, 0
+}
+
+// launchCmd builds the emulator process, honoring a manually picked core.
+func (m Model) launchCmd(game rom.Game, r *emulate.Recipe) (*exec.Cmd, error) {
+	if c, ok := m.overrides.Get(game.ID); ok && c.Core != "" {
+		if cs := r.CoresFor(game.ConsoleID); len(cs) > 0 {
+			core := cs[0]
+			for _, cand := range cs {
+				if cand == c.Core {
+					core = cand
+					break
+				}
+			}
+			rc := *r
+			rc.Cores = map[string][]string{game.ConsoleID: {core}}
+			return rc.Command(game)
+		}
+	}
+	return r.Command(game)
+}
+
+// metaEdge jumps to the first (last=false) or last selectable row.
+func (m *Model) metaEdge(last bool) {
+	if len(m.metaRows) == 0 {
+		return
+	}
+	if last {
+		m.metaCur = len(m.metaRows) - 1
+		for m.metaCur > 0 && m.metaRows[m.metaCur].sep {
+			m.metaCur--
+		}
+	} else {
+		m.metaCur = clampMetaCur(m.metaRows, 0)
+	}
+	m.refreshMeta()
+}
+
+// metaMove shifts the metadata cursor, skipping separators.
+func (m *Model) metaMove(d int) {
+	if len(m.metaRows) == 0 {
+		return
+	}
+	i := m.metaCur
+	for {
+		i += d
+		if i < 0 {
+			i = 0
+			break
+		}
+		if i >= len(m.metaRows) {
+			i = len(m.metaRows) - 1
+			break
+		}
+		if !m.metaRows[i].sep {
+			break
+		}
+	}
+	m.metaCur = i
+	m.refreshMeta()
+}
+
+// metaCopy copies the cursor row value to the terminal clipboard (OSC52).
+func (m Model) metaCopy() (tea.Model, tea.Cmd) {
+	if m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
+		return m, nil
+	}
+	row := m.metaRows[m.metaCur]
+	if row.sep || strings.TrimSpace(row.copy) == "" {
+		m.status = i18n.T("status.copy_empty")
+		return m, nil
+	}
+	what := row.label
+	if what == "" {
+		what = row.copy
+	}
+	m.status = i18n.T("status.copied", what)
+	return m, copyCmd(row.copy)
+}
+
+// copyCmd writes text to the terminal clipboard via OSC52 (works over SSH;
+// tmux needs `set-clipboard on` or passthrough).
+func copyCmd(s string) tea.Cmd {
+	return func() tea.Msg {
+		seq := osc52.New(s)
+		if os.Getenv("TMUX") != "" {
+			seq = seq.Tmux()
+		}
+		fmt.Fprint(os.Stdout, seq)
+		return nil
+	}
+}
+
+// cycleAlt switches the cursor row option: another matching emulator on
+// the recipe row, another core on the core row. n moves forward, p back.
+func (m *Model) cycleAlt(next bool) {
+	g := m.selected()
+	if g == nil || m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
+		return
+	}
+	// saveChoice persists the per-game choice; on failure the status
+	// reports it and the meta view still reflects the in-memory pick.
+	save := func(ch overrides.Choice) {
+		m.overrides.Set(g.ID, ch)
+		if err := m.overrides.Save(); err != nil {
+			m.status = i18n.T("status.save_fail", err)
+			return
+		}
+		m.status = ""
+		m.refreshMeta()
+	}
+	switch m.metaRows[m.metaCur].kind {
+	case "recipe":
+		alts := emulate.MatchAll(m.recipes, *g)
+		if len(alts) < 2 {
+			return
+		}
+		cur := 0
+		if c, ok := m.overrides.Get(g.ID); ok {
+			for i, r := range alts {
+				if r.Name == c.Recipe {
+					cur = i
+					break
+				}
+			}
+		}
+		if next {
+			cur = (cur + 1) % len(alts)
+		} else {
+			cur = (cur - 1 + len(alts)) % len(alts)
+		}
+		ch, _ := m.overrides.Get(g.ID)
+		ch.Recipe = alts[cur].Name
+		save(ch)
+	case "core":
+		r := m.gameRecipe(*g)
+		if r == nil {
+			return
+		}
+		cs := r.CoresFor(g.ConsoleID)
+		if len(cs) < 2 {
+			return
+		}
+		_, _, cur := m.gameCore(*g, r)
+		if next {
+			cur = (cur + 1) % len(cs)
+		} else {
+			cur = (cur - 1 + len(cs)) % len(cs)
+		}
+		ch, _ := m.overrides.Get(g.ID)
+		ch.Core = cs[cur]
+		save(ch)
+	}
 }
 
 // Init implements tea.Model.
@@ -340,12 +595,12 @@ func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	game := *g
-	r := emulate.Match(m.recipes, game)
+	r := m.gameRecipe(game)
 	if r == nil {
 		m.status = i18n.T("status.no_recipe", game.Title)
 		return m, nil
 	}
-	cmd, err := r.Command(game)
+	cmd, err := m.launchCmd(game, r)
 	if err != nil {
 		m.status = i18n.T("status.launch_fail", err)
 		return m, nil
@@ -472,20 +727,28 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case PaneMeta:
 		switch {
 		case key.Matches(msg, k.Up):
-			m.meta.LineUp(1)
+			m.metaMove(-1)
 		case key.Matches(msg, k.Down):
-			m.meta.LineDown(1)
+			m.metaMove(1)
 		case key.Matches(msg, k.PageUp):
-			m.meta.HalfViewUp()
-		case key.Matches(msg, k.PageDown), key.Matches(msg, k.Select):
-			m.meta.HalfViewDown()
+			m.metaMove(-max(m.meta.Height-1, 1))
+		case key.Matches(msg, k.PageDown):
+			m.metaMove(max(m.meta.Height-1, 1))
 		case key.Matches(msg, k.Top):
-			m.meta.GotoTop()
+			m.metaEdge(false)
 		case key.Matches(msg, k.Bottom):
-			m.meta.GotoBottom()
+			m.metaEdge(true)
+		case key.Matches(msg, k.Copy), key.Matches(msg, k.Select):
+			return m.metaCopy()
 		case key.Matches(msg, k.Rescan):
 			m.status = i18n.T("status.scanning", m.romDir)
 			return m, m.rescanCmd()
+		}
+		switch msg.String() {
+		case "n":
+			m.cycleAlt(true)
+		case "p":
+			m.cycleAlt(false)
 		}
 	}
 
@@ -672,64 +935,147 @@ func (m Model) renderMetaPane(w int) string {
 	return m.column(lines, w, 1, 0)
 }
 
-// renderMeta builds the metadata text, every line within viewport width.
-// Values are soft-wrapped (never hard-truncated with "…"), so the viewport
-// scroll reveals the full text instead of losing it to truncation.
-func (m Model) renderMeta() string {
+// buildMetaRows collects the navigable metadata rows for the selected game.
+// Every row carries its clipboard text; recipe/core rows are switchable.
+func (m Model) buildMetaRows() []metaRow {
 	g := m.selected()
 	if g == nil {
-		return infoStyle.Render(i18n.T("meta.none"))
+		return nil
 	}
 	w := max(m.meta.Width, 20)
-	var b strings.Builder
-	kv := func(k, v string) {
-		for i, ln := range wrapSoft(v, max(w-metaKeyWidth, 10)) {
-			if i == 0 {
-				b.WriteString(metaKey.Render(k) + metaVal.Render(ln) + "\n")
-			} else {
-				b.WriteString(strings.Repeat(" ", metaKeyWidth) + metaVal.Render(ln) + "\n")
-			}
-		}
+	vw := max(w-metaKeyWidth, 10)
+	kv := func(label, v string) metaRow {
+		return metaRow{kind: "kv", label: label, lines: wrapSoft(v, vw), copy: v}
 	}
-	for _, ln := range wrapSoft(g.Title, w) {
-		b.WriteString(metaVal.Render(ln) + "\n")
-	}
-	b.WriteString("\n")
-	b.WriteString(metaKey.Render(i18n.T("meta.id")) + metaID.Render(g.ShortID()) + "\n")
-	for _, ln := range wrapSoft(g.ID, max(w-4, 10)) {
-		b.WriteString(dim("    "+ln) + "\n")
-	}
-	kv(i18n.T("meta.console"), fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID))
+	var rows []metaRow
+	rows = append(rows, metaRow{kind: "title", lines: wrapSoft(g.Title, w), copy: g.Title})
+	rows = append(rows, metaRow{sep: true})
+	rows = append(rows, metaRow{kind: "id", label: i18n.T("meta.id"), lines: []string{g.ShortID()}, copy: g.ID})
+	rows = append(rows, metaRow{kind: "hash", lines: wrapSoft(g.ID, max(w-4, 10)), copy: g.ID})
+	con := fmt.Sprintf("%s (%s)", g.ConsoleName, g.ConsoleID)
+	rows = append(rows, kv(i18n.T("meta.console"), con))
 	if g.Region != "" {
-		kv(i18n.T("meta.region"), g.Region)
+		rows = append(rows, kv(i18n.T("meta.region"), g.Region))
 	}
 	if len(g.Tags) > 0 {
-		kv(i18n.T("meta.tags"), strings.Join(g.Tags, ", "))
+		rows = append(rows, kv(i18n.T("meta.tags"), strings.Join(g.Tags, ", ")))
 	}
-	kv(i18n.T("meta.size"), i18n.T("meta.size.fmt", g.Size, pluralWord(int(g.Size), "word.byte"), float64(g.Size)/(1<<20)))
-	b.WriteString("\n")
-	kv(i18n.T("meta.file"), g.Path)
+	rows = append(rows, kv(i18n.T("meta.size"), i18n.T("meta.size.fmt", g.Size, pluralWord(int(g.Size), "word.byte"), float64(g.Size)/(1<<20))))
+	rows = append(rows, metaRow{sep: true})
+	rows = append(rows, kv(i18n.T("meta.file"), g.Path))
 	if g.Inner != "" {
-		kv(i18n.T("meta.inner"), g.Inner)
+		rows = append(rows, kv(i18n.T("meta.inner"), g.Inner))
 	}
-	b.WriteString("\n")
-	if r := emulate.Match(m.recipes, *g); r != nil {
-		kv(i18n.T("meta.recipe"), r.Name)
-		kv(i18n.T("meta.cheats"), featText(r.Cheats.Supported, r.Cheats.Path, *g, r))
-		kv(i18n.T("meta.achievements"), featText(r.Achievements.Supported, r.Achievements.Note, *g, r))
-		kv(i18n.T("meta.mods"), featText(r.Mods.Supported, r.Mods.Path, *g, r))
+	rows = append(rows, metaRow{sep: true})
+	if r := m.gameRecipe(*g); r != nil {
+		alts := emulate.MatchAll(m.recipes, *g)
+		disp := altLabel(r.Name, alts)
+		rows = append(rows, metaRow{kind: "recipe", label: i18n.T("meta.recipe"), lines: wrapSoft(disp, vw), copy: r.Name})
+		if core, cs, idx := m.gameCore(*g, r); len(cs) > 0 {
+			cval := core
+			if len(cs) > 1 {
+				cval = fmt.Sprintf("%s (%d/%d)", core, idx+1, len(cs))
+			}
+			rows = append(rows, metaRow{kind: "core", label: i18n.T("meta.core"), lines: wrapSoft(cval, vw), copy: core})
+		}
+		rows = append(rows, kv(i18n.T("meta.cheats"), featText(r.Cheats.Supported, r.Cheats.Path, *g, r)))
+		rows = append(rows, kv(i18n.T("meta.achievements"), featText(r.Achievements.Supported, r.Achievements.Note, *g, r)))
+		rows = append(rows, kv(i18n.T("meta.mods"), featText(r.Mods.Supported, r.Mods.Path, *g, r)))
 	} else {
-		kv(i18n.T("meta.recipe"), i18n.T("recipe.none"))
+		rows = append(rows, metaRow{kind: "kv", label: i18n.T("meta.recipe"), lines: wrapSoft(i18n.T("recipe.none"), vw)})
 	}
 	if m.play != nil {
 		if st, ok := m.play.Get(g.ID); ok {
-			kv(i18n.T("meta.played"), i18n.T("meta.played.fmt",
+			played := i18n.T("meta.played.fmt",
 				i18n.Duration(st.Total()), st.Sessions,
 				pluralWord(st.Sessions, "word.session"),
-				st.LastPlayed.Format("2006-01-02 15:04")))
+				st.LastPlayed.Format("2006-01-02 15:04"))
+			rows = append(rows, kv(i18n.T("meta.played"), played))
 		}
 	}
-	return b.String()
+	return rows
+}
+
+// altLabel names the active alternative among all matches: plain name when
+// alone, otherwise "name (i/n)" so switching stays discoverable.
+func altLabel(name string, alts []*emulate.Recipe) string {
+	if len(alts) < 2 {
+		return name
+	}
+	for i, r := range alts {
+		if r.Name == name {
+			return fmt.Sprintf("%s (%d/%d)", name, i+1, len(alts))
+		}
+	}
+	return name
+}
+
+// renderMetaRows renders rows within viewport width and reports the visual
+// starting line of every row for cursor following. Values are soft-wrapped
+// (never hard-truncated with "…"); the cursor row is highlighted instead.
+func (m Model) renderMetaRows() (string, []int) {
+	rows := m.metaRows
+	if len(rows) == 0 {
+		return infoStyle.Render(i18n.T("meta.none")), nil
+	}
+	w := max(m.meta.Width, 20)
+	var b strings.Builder
+	starts := make([]int, len(rows))
+	n := 0
+	padLabel := func(label string) string {
+		if pad := metaKeyWidth - lipgloss.Width(label); pad > 0 {
+			return label + strings.Repeat(" ", pad)
+		}
+		return label + " "
+	}
+	for i, r := range rows {
+		starts[i] = n
+		if r.sep {
+			b.WriteString("\n")
+			n++
+			continue
+		}
+		if i == m.metaCur && m.focus == PaneMeta {
+			for j, ln := range r.lines {
+				var plain string
+				if j == 0 && r.label != "" {
+					plain = fit("  "+padLabel(r.label)+truncate(ln, max(w-2-metaKeyWidth-1, 1)), w)
+				} else if j == 0 {
+					plain = fit("  "+truncate(ln, w-2), w)
+				} else {
+					plain = fit("    "+truncate(ln, w-4), w)
+				}
+				b.WriteString(styledBarRow(plain) + "\n")
+				n++
+			}
+			continue
+		}
+		switch r.kind {
+		case "title":
+			for _, ln := range r.lines {
+				b.WriteString(metaVal.Render(ln) + "\n")
+				n++
+			}
+		case "id":
+			b.WriteString(metaKey.Render(r.label) + metaID.Render(r.lines[0]) + "\n")
+			n++
+		case "hash":
+			for _, ln := range r.lines {
+				b.WriteString(dim("    "+ln) + "\n")
+				n++
+			}
+		default:
+			for j, ln := range r.lines {
+				if j == 0 {
+					b.WriteString(metaKey.Render(r.label) + metaVal.Render(ln) + "\n")
+				} else {
+					b.WriteString(strings.Repeat(" ", metaKeyWidth) + metaVal.Render(ln) + "\n")
+				}
+				n++
+			}
+		}
+	}
+	return b.String(), starts
 }
 
 // featText renders a feature row: yes/no plus an expanded path or note.

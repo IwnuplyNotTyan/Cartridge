@@ -14,6 +14,7 @@ import (
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
 	"cartridge/internal/library"
+	"cartridge/internal/overrides"
 	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 	"cartridge/internal/ui"
@@ -129,6 +130,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
 		os.Exit(1)
 	}
+	over, err := overrides.Load(overrides.DefaultPath(cfg.Library))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
+		os.Exit(1)
+	}
 
 	games, errs := rom.ScanDir(cfg.RomDir)
 	for _, err := range errs {
@@ -159,7 +165,8 @@ func main() {
 		ui.WithPatches(patches),
 		ui.WithPaths(cfg.ConfigFile, cfg.Recipes, cfg.Patches, cfg.ModsDir, cfg.SavesDir),
 		ui.WithLangRaw(rawLang(*lang, cfg)),
-		ui.WithPlaytime(play))
+		ui.WithPlaytime(play),
+		ui.WithOverrides(over))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)

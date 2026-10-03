@@ -12,6 +12,7 @@ import (
 
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
+	"cartridge/internal/overrides"
 	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
 )
@@ -246,6 +247,171 @@ func TestLaunchDoneError(t *testing.T) {
 	out, _ := m.Update(launchDoneMsg{gameID: "aaa111", dur: time.Second, err: errTestBoom})
 	if got := out.(Model).status; !strings.Contains(got, "launch failed") {
 		t.Fatalf("status = %q, want launch failure", got)
+	}
+}
+
+// metaCursorTo moves the meta cursor to the first row of the given kind.
+func metaCursorTo(t *testing.T, m Model, kind string) Model {
+	t.Helper()
+	for i := 0; i < 60; i++ {
+		if m.metaCur >= 0 && m.metaCur < len(m.metaRows) && m.metaRows[m.metaCur].kind == kind {
+			return m
+		}
+		out, _ := m.Update(keyMsg("down"))
+		m = out.(Model)
+	}
+	t.Fatalf("meta has no %q row", kind)
+	return m
+}
+
+func TestMetaCursorSkipsSeps(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneMeta
+	if m.metaCur != 0 || m.metaRows[m.metaCur].kind != "title" {
+		t.Fatalf("cursor must start on title, cur=%d", m.metaCur)
+	}
+	// title(0) + sep(1) -> id(2).
+	out, _ := m.Update(keyMsg("down"))
+	m = out.(Model)
+	if m.metaCur != 2 || m.metaRows[m.metaCur].kind != "id" {
+		t.Fatalf("down must skip separator, cur=%d", m.metaCur)
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = out.(Model)
+	if m.metaCur != 0 {
+		t.Fatalf("up must skip separator back, cur=%d", m.metaCur)
+	}
+}
+
+func TestMetaCopy(t *testing.T) {
+	prev := i18n.Get()
+	i18n.Set(i18n.En)
+	defer i18n.Set(prev)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneMeta
+	m = metaCursorTo(t, m, "id")
+	out, cmd := m.Update(keyMsg("c"))
+	m = out.(Model)
+	if cmd == nil {
+		t.Fatalf("copy must return a cmd")
+	}
+	if !strings.Contains(m.status, "copied id") {
+		t.Fatalf("status = %q, want copied id", m.status)
+	}
+	// enter copies too.
+	out, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if cmd == nil || !strings.Contains(m.status, "copied id") {
+		t.Fatalf("enter must copy too: status=%q cmd=%v", m.status, cmd)
+	}
+}
+
+func TestMetaRecipeAltCycle(t *testing.T) {
+	prev := i18n.Get()
+	i18n.Set(i18n.En)
+	defer i18n.Set(prev)
+	ext := emulate.Recipe{Name: "ext-nes", Extensions: []string{"nes"}, Emulator: "e1"}
+	con := emulate.Recipe{Name: "con-nes", Consoles: []string{"nes"}, Emulator: "e2"}
+	ovPath := filepath.Join(t.TempDir(), "overrides.json")
+	ov, err := overrides.Load(ovPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{ext, con}),
+		WithOverrides(ov)))
+	m.focus = PaneMeta
+	m = metaCursorTo(t, m, "recipe")
+	if view := m.View(); !strings.Contains(view, "ext-nes (1/2)") {
+		t.Fatalf("hierarchy winner must show (1/2)\n%s", view)
+	}
+	out, _ := m.Update(keyMsg("n"))
+	m = out.(Model)
+	if got := m.gameRecipe(*m.selected()); got == nil || got.Name != "con-nes" {
+		t.Fatalf("n must switch emulator, got %+v", got)
+	}
+	if view := m.View(); !strings.Contains(view, "con-nes (2/2)") {
+		t.Fatalf("view must show (2/2)\n%s", view)
+	}
+	// The pick persists across restarts.
+	reloaded, err := overrides.Load(ovPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := reloaded.Get("aaa111")
+	if !ok || c.Recipe != "con-nes" {
+		t.Fatalf("recipe pick must persist: %+v ok=%v", c, ok)
+	}
+	out, _ = m.Update(keyMsg("p"))
+	m = out.(Model)
+	if got := m.gameRecipe(*m.selected()); got == nil || got.Name != "ext-nes" {
+		t.Fatalf("p must switch back, got %+v", got)
+	}
+}
+
+func TestMetaCoreCycle(t *testing.T) {
+	prev := i18n.Get()
+	i18n.Set(i18n.En)
+	defer i18n.Set(prev)
+	ra := emulate.Recipe{Name: "ra", Consoles: []string{"nes"}, Emulator: "e1",
+		Args:  []string{"-L", "{core}", "{rom}"},
+		Cores: map[string][]string{"nes": {"a.so", "b.so"}}}
+	ovPath := filepath.Join(t.TempDir(), "overrides.json")
+	ov, err := overrides.Load(ovPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{ra}),
+		WithOverrides(ov)))
+	m.focus = PaneMeta
+	m = metaCursorTo(t, m, "core")
+	if view := m.View(); !strings.Contains(view, "a.so") {
+		t.Fatalf("default core must show\n%s", view)
+	}
+	out, _ := m.Update(keyMsg("n"))
+	m = out.(Model)
+	core, cs, idx := m.gameCore(*m.selected(), m.gameRecipe(*m.selected()))
+	if core != "b.so" || len(cs) != 2 || idx != 1 {
+		t.Fatalf("core = %q %+v %d", core, cs, idx)
+	}
+	if view := m.View(); !strings.Contains(view, "b.so (2/2)") {
+		t.Fatalf("view must show picked core\n%s", view)
+	}
+	// The pick persists across restarts.
+	reloaded, err := overrides.Load(ovPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := reloaded.Get("aaa111")
+	if !ok || c.Core != "b.so" {
+		t.Fatalf("core pick must persist: %+v ok=%v", c, ok)
+	}
+	// Launch path works with the picked core.
+	out, cmd := m.Update(keyMsg("x"))
+	m = out.(Model)
+	if cmd == nil {
+		t.Fatalf("expected launch command with picked core")
+	}
+	_ = m
+}
+
+func TestMetaCursorBarFocusOnly(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	// Bars mark the cursor row instead of "> " arrows, and only while
+	// the metadata pane is focused.
+	m.focus = PaneMeta
+	content, _ := m.renderMetaRows()
+	if !strings.Contains(content, "│") {
+		t.Fatalf("focused meta must mark cursor with a bar\n%s", content)
+	}
+	if strings.Contains(content, "> ") {
+		t.Fatalf("meta must not use arrow markers\n%s", content)
+	}
+	m.focus = PaneGames
+	content, _ = m.renderMetaRows()
+	if strings.Contains(content, "│") {
+		t.Fatalf("unfocused meta must not highlight\n%s", content)
 	}
 }
 
