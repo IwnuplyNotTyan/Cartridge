@@ -305,6 +305,28 @@ func (m Model) selected() *rom.Game {
 	return &m.filtered[m.gameCur]
 }
 
+// selectGame moves the game cursor and resets the meta pane to the top,
+// so the new game's title is always visible instead of a deep-scrolled
+// tail that looks identical across games of one console.
+func (m *Model) selectGame(i int) {
+	m.gameCur = i
+	m.metaCur = 0
+	m.refreshMeta()
+}
+
+// setFocus moves browser focus, re-syncing the meta viewport geometry.
+// The visible pane set depends on focus, so without this a meta pane
+// shown again after being hidden would keep its stale narrow width
+// and render ~10 cells wide until the next resize.
+func (m *Model) setFocus(p Pane) {
+	if m.focus == p {
+		return
+	}
+	m.focus = p
+	m.sizeMeta()
+	m.refreshMeta()
+}
+
 func (m *Model) refreshMeta() {
 	m.metaRows = m.buildMetaRows()
 	m.metaCur = clampMetaCur(m.metaRows, m.metaCur)
@@ -639,24 +661,24 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, k.Next):
-		m.focus = (m.focus + 1) % 3
+		m.setFocus((m.focus + 1) % 3)
 		return m, nil
 	case key.Matches(msg, k.Prev):
-		m.focus = (m.focus + 2) % 3
+		m.setFocus((m.focus + 2) % 3)
 		return m, nil
 	}
 	switch msg.String() {
 	case "1":
-		m.focus = PaneConsoles
+		m.setFocus(PaneConsoles)
 		return m, nil
 	case "2":
-		m.focus = PaneGames
+		m.setFocus(PaneGames)
 		return m, nil
 	case "3":
-		m.focus = PaneMeta
+		m.setFocus(PaneMeta)
 		return m, nil
 	case "esc":
-		m.focus = PaneGames
+		m.setFocus(PaneGames)
 		return m, nil
 	}
 
@@ -692,37 +714,31 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.gameCur = 0
 			m.refilter()
 		case key.Matches(msg, k.Select):
-			m.focus = PaneGames
+			m.setFocus(PaneGames)
 		}
 	case PaneGames:
 		switch {
 		case key.Matches(msg, k.Up):
 			if m.gameCur > 0 {
-				m.gameCur--
-				m.refreshMeta()
+				m.selectGame(m.gameCur - 1)
 			}
 		case key.Matches(msg, k.Down):
 			if m.gameCur < len(m.filtered)-1 {
-				m.gameCur++
-				m.refreshMeta()
+				m.selectGame(m.gameCur + 1)
 			}
 		case key.Matches(msg, k.PageUp):
-			m.gameCur = max(m.gameCur-10, 0)
-			m.refreshMeta()
+			m.selectGame(max(m.gameCur-10, 0))
 		case key.Matches(msg, k.PageDown):
-			m.gameCur = min(m.gameCur+10, max(len(m.filtered)-1, 0))
-			m.refreshMeta()
+			m.selectGame(min(m.gameCur+10, max(len(m.filtered)-1, 0)))
 		case key.Matches(msg, k.Top):
-			m.gameCur = 0
-			m.refreshMeta()
+			m.selectGame(0)
 		case key.Matches(msg, k.Bottom):
-			m.gameCur = max(len(m.filtered)-1, 0)
-			m.refreshMeta()
+			m.selectGame(max(len(m.filtered)-1, 0))
 		case key.Matches(msg, k.Rescan):
 			m.status = i18n.T("status.scanning", m.romDir)
 			return m, m.rescanCmd()
 		case key.Matches(msg, k.Select):
-			m.focus = PaneMeta
+			m.setFocus(PaneMeta)
 		}
 	case PaneMeta:
 		switch {
@@ -804,14 +820,60 @@ func (m Model) bodyH() int {
 	return max(m.contentH()-1-m.helpHeight(), 5) // single info-bar line, no slack
 }
 
-// layout splits the content area into three column inner widths (no borders,
-// columns are separated by divider lines).
+// Column breakpoints on content width: three panes fit comfortably,
+// two panes share the space, one pane takes it all.
+const (
+	threeColMin = 90
+	twoColMin   = 56
+)
+
+// visiblePanes returns the panes to draw for the current width and focus.
+// Half screens keep consoles+games on the left side and games+metadata
+// once a game is in play (games/meta focus); tiny screens show only the
+// focused pane. The focused pane is always visible.
+func (m Model) visiblePanes() []Pane {
+	w := m.contentW()
+	if w >= threeColMin {
+		return []Pane{PaneConsoles, PaneGames, PaneMeta}
+	}
+	if w >= twoColMin {
+		if m.focus == PaneConsoles {
+			return []Pane{PaneConsoles, PaneGames}
+		}
+		return []Pane{PaneGames, PaneMeta}
+	}
+	return []Pane{m.focus}
+}
+
+// layout splits the content area into column inner widths (no borders,
+// columns are separated by divider lines). Hidden panes get width 0.
+// Widths account for column padding, so joined rows never overflow.
 func (m Model) layout() (cw, gw, mw int) {
 	w := m.contentW()
-	cw = clamp(w*30/100, 30, 40)
-	mw = clamp(w*30/100, 28, 44)
-	gw = max(w-cw-mw-2-4, 20) // 2 dividers + padding
-	return cw, gw, mw
+	vis := m.visiblePanes()
+	if len(vis) == 3 {
+		cw = clamp(w*30/100, 30, 40)
+		mw = clamp(w*30/100, 28, 44)
+		gw = max(w-cw-mw-2-4, 20) // 2 dividers + padding
+		return cw, gw, mw
+	}
+	if len(vis) == 2 {
+		first := clamp(w*38/100, 24, 40)
+		second := max(w-first-4, 18) // 1 divider + column padding
+		if vis[0] == PaneConsoles {
+			return first, second, 0
+		}
+		return 0, first, second
+	}
+	// Single pane: keep room for the column padding around it.
+	switch vis[0] {
+	case PaneConsoles:
+		return max(w-1, 10), 0, 0
+	case PaneGames:
+		return 0, max(w-2, 10), 0
+	default:
+		return 0, 0, max(w-1, 10)
+	}
 }
 
 // View implements tea.Model.
@@ -826,11 +888,27 @@ func (m Model) View() string {
 		body = m.renderSettings()
 	} else {
 		cw, gw, mw := m.layout()
-		left := m.renderConsoles(cw)
-		mid := m.renderGames(gw)
-		right := m.renderMetaPane(mw)
 		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
-		body = lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+		parts := make([]string, 0, 5)
+		if cw > 0 {
+			if len(parts) > 0 {
+				parts = append(parts, sep)
+			}
+			parts = append(parts, m.renderConsoles(cw))
+		}
+		if gw > 0 {
+			if len(parts) > 0 {
+				parts = append(parts, sep)
+			}
+			parts = append(parts, m.renderGames(gw))
+		}
+		if mw > 0 {
+			if len(parts) > 0 {
+				parts = append(parts, sep)
+			}
+			parts = append(parts, m.renderMetaPane(mw))
+		}
+		body = lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 	}
 	var content string
 	if m.showHelp {
@@ -1104,29 +1182,74 @@ func (m Model) renderHelp() string {
 }
 
 func (m Model) renderInfo() string {
+	w := m.contentW()
+	// Full bar with shrinking text budgets while it overflows.
+	romB, titleB, statusB := 40, 32, 40
+	for {
+		left, right := m.barHalves(romB, titleB, statusB)
+		if lipgloss.Width(left)+lipgloss.Width(right)+1 <= w {
+			return barJoin(w, left, right)
+		}
+		if romB <= 8 && titleB <= 8 && statusB <= 8 {
+			break
+		}
+		romB, titleB, statusB = max(romB/2, 8), max(titleB/2, 8), max(statusB/2, 8)
+	}
+
+	// Compact bar for narrow screens: the middle stats are dropped,
+	// the context is truncated to whatever is left.
+	brand := brandBadge.Render(" cartridge ")
+	helpTxt := i18n.T("bar.help")
+	ctxBudget := w - lipgloss.Width(brand) - lipgloss.Width(helpTxt) - 1
+	var right string
+	if ctxBudget > 4 {
+		if m.status != "" {
+			right = barStyle.Render(truncate(m.status, ctxBudget))
+		} else if g := m.selected(); g != nil {
+			sid := g.ShortID()
+			if tb := ctxBudget - lipgloss.Width(sid) - 3 - 2; tb >= 4 {
+				right = barStyle.Render(sid+" • ") + titleBadge.Render(" "+truncate(g.Title, tb)+" ")
+			} else if ctxBudget >= lipgloss.Width(sid) {
+				right = barStyle.Render(truncate(sid, ctxBudget))
+			}
+		}
+	}
+	help := helpBadge.Render(helpTxt)
+	if lipgloss.Width(brand)+1+lipgloss.Width(right)+lipgloss.Width(help) > w {
+		// Extreme: even the help badge must shrink to fit.
+		help = helpBadge.Render(truncate(helpTxt, max(w-lipgloss.Width(brand)-1-lipgloss.Width(right), 0)))
+	}
+	return barJoin(w, brand, right+help)
+}
+
+// barHalves builds the styled bar halves with shrinking text budgets:
+// brand + stats on the left, context + help hint on the right.
+func (m Model) barHalves(romB, titleB, statusB int) (string, string) {
 	// Весь бар залит серым (barStyle): бейджи остаются цветными модулями,
 	// а текст и пустое пространство между ними — на сером фоне.
 	left := brandBadge.Render(" cartridge ") +
 		barStyle.Render("  "+i18n.T("bar.stats",
 			len(m.games), pluralWord(len(m.games), "word.rom"),
 			len(m.rows)-1, pluralWord(len(m.rows)-1, "word.console"),
-			truncate(m.romDir, 40)))
+			truncate(m.romDir, romB)))
 
 	var context string
 	if m.status != "" {
-		context = barStyle.Render(truncate(m.status, 40))
+		context = barStyle.Render(truncate(m.status, statusB))
 	} else if g := m.selected(); g != nil {
 		context = barStyle.Render(g.ShortID()+" • ") +
-			titleBadge.Render(" "+truncate(g.Title, 32)+" ")
+			titleBadge.Render(" "+truncate(g.Title, titleB)+" ")
 	}
-	right := context
-	right += helpBadge.Render(i18n.T("bar.help"))
+	right := context + helpBadge.Render(i18n.T("bar.help"))
+	return left, right
+}
 
-	gap := max(m.contentW()-lipgloss.Width(left)-lipgloss.Width(right), 1)
-	gapStr := barStyle.Render(strings.Repeat(" ", gap))
-	bar := left + gapStr + right
+// barJoin glues the halves with a grey gap, exactly w cells wide.
+func barJoin(w int, left, right string) string {
+	gap := max(w-lipgloss.Width(left)-lipgloss.Width(right), 1)
+	bar := left + barStyle.Render(strings.Repeat(" ", gap)) + right
 	// Добиваем бар серым до полной ширины, чтобы не осталось незакрашенных хвостов.
-	if pad := m.contentW() - lipgloss.Width(bar); pad > 0 {
+	if pad := w - lipgloss.Width(bar); pad > 0 {
 		bar += barStyle.Render(strings.Repeat(" ", pad))
 	}
 	return bar

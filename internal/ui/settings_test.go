@@ -247,6 +247,84 @@ func TestSettingsCoresEditSavesPatch(t *testing.T) {
 	}
 }
 
+// metaRecipeValue returns the browser meta "recipe" row text.
+func metaRecipeValue(t *testing.T, m Model) string {
+	t.Helper()
+	for _, r := range m.metaRows {
+		if !r.sep && r.label == i18n.T("meta.recipe") {
+			return strings.Join(r.lines, " ")
+		}
+	}
+	t.Fatalf("no recipe row in meta")
+	return ""
+}
+
+// metaCheatsValue returns the browser meta "cheats" row text.
+func metaCheatsValue(t *testing.T, m Model) string {
+	t.Helper()
+	for _, r := range m.metaRows {
+		if !r.sep && r.label == i18n.T("meta.cheats") {
+			return strings.Join(r.lines, " ")
+		}
+	}
+	t.Fatalf("no cheats row in meta")
+	return ""
+}
+
+func TestSettingsConsolesPatchRefreshesMeta(t *testing.T) {
+	m, _ := moveTestModel(t) // r1(nes) matches Battletoads
+	if got := metaRecipeValue(t, m); !strings.Contains(got, "r1") {
+		t.Fatalf("precondition: meta recipe = %q", got)
+	}
+	// Move r1 away to snes: Battletoads must lose its recipe at once,
+	// without any resize/help/focus dance.
+	m.settCur = 0
+	m.startRecipeEdit("consoles")
+	m.settBuf = []rune("snes")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if got := metaRecipeValue(t, m); !strings.Contains(got, i18n.T("recipe.none")) {
+		t.Fatalf("meta must lose the recipe, got %q", got)
+	}
+}
+
+func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
+	i18n.Set(i18n.En)
+	dir := t.TempDir()
+	recipesPath := filepath.Join(dir, "recipes.json")
+	base := []emulate.Recipe{{
+		Name: "r1", Consoles: []string{"nes"}, Emulator: "/base/emu",
+		Cheats: emulate.Cheats{Supported: true, Path: "{emu_dir}/c.cht"},
+	}}
+	if err := emulate.SaveRecipes(recipesPath, base); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := emulate.Load(recipesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emu := "/patched/emu"
+	patches := []emulate.RecipePatch{{Recipe: "r1", Emulator: &emu}}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes(emulate.ApplyPatches(loaded, patches)),
+		WithBaseRecipes(loaded),
+		WithPatches(patches),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s"),
+		WithLangRaw("auto"),
+	)
+	m = sizedModel(t, m)
+	m = openSettings(t, m)
+	m.settTab = TabRecipes
+	m.settCur = 0
+	if got := metaCheatsValue(t, m); !strings.Contains(got, "/patched/c.cht") {
+		t.Fatalf("precondition: cheats = %q", got)
+	}
+	m.dropRecipePatch()
+	if got := metaCheatsValue(t, m); !strings.Contains(got, "/base/c.cht") {
+		t.Fatalf("meta must follow dropped patch, got %q", got)
+	}
+}
+
 func TestSettingsLanguageApplies(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabLang

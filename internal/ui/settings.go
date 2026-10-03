@@ -339,6 +339,7 @@ func (m *Model) saveRecipeEdit() {
 		}
 	}
 	m.recipes = emulate.ApplyPatches(m.baseRecipes, m.patches)
+	m.refreshMeta()
 	m.status = i18n.T("status.sett.patch_saved", name)
 }
 
@@ -500,6 +501,7 @@ func (m *Model) dropRecipePatch() {
 	}
 	m.patches = updated
 	m.recipes = emulate.ApplyPatches(m.baseRecipes, m.patches)
+	m.refreshMeta()
 	m.status = i18n.T("status.sett.patch_dropped", name)
 }
 

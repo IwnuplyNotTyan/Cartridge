@@ -415,6 +415,165 @@ func TestMetaCursorBarFocusOnly(t *testing.T) {
 	}
 }
 
+// resizeModel applies a terminal size to the model.
+func resizeModel(t *testing.T, m Model, w int) Model {
+	t.Helper()
+	out, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: 30})
+	mm, ok := out.(Model)
+	if !ok {
+		t.Fatalf("Update did not return ui.Model")
+	}
+	return mm
+}
+
+func TestAdaptiveVisiblePanes(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	// Wide screen (120 → content 118): all three panes.
+	if got := m.visiblePanes(); len(got) != 3 {
+		t.Fatalf("wide must show 3 panes, got %v", got)
+	}
+	// Half screen (70 → content 68): consoles focus keeps the left
+	// pair, games/meta focus shows metadata on the right.
+	m = resizeModel(t, m, 70)
+	m.focus = PaneConsoles
+	if got := m.visiblePanes(); len(got) != 2 || got[0] != PaneConsoles || got[1] != PaneGames {
+		t.Fatalf("consoles focus must show consoles+games, got %v", got)
+	}
+	m.focus = PaneGames
+	if got := m.visiblePanes(); len(got) != 2 || got[0] != PaneGames || got[1] != PaneMeta {
+		t.Fatalf("games focus must show games+meta, got %v", got)
+	}
+	m.focus = PaneMeta
+	if got := m.visiblePanes(); len(got) != 2 || got[0] != PaneGames || got[1] != PaneMeta {
+		t.Fatalf("meta focus must show games+meta, got %v", got)
+	}
+	// Tiny screen (40 → content 38): only the focused pane.
+	m = resizeModel(t, m, 40)
+	for _, f := range []Pane{PaneConsoles, PaneGames, PaneMeta} {
+		m.focus = f
+		if got := m.visiblePanes(); len(got) != 1 || got[0] != f {
+			t.Fatalf("tiny must show only focus %v, got %v", f, got)
+		}
+	}
+}
+
+func TestAdaptiveViewHidesPanes(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m = resizeModel(t, m, 70)
+	m.focus = PaneConsoles
+	view := m.View()
+	for _, want := range []string{"CONSOLES", "GAMES"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("medium view must show %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "METADATA") {
+		t.Fatalf("medium view must hide metadata\n%s", view)
+	}
+	// A selected game keeps metadata on the right: games or meta focus
+	// shows the games+meta pair.
+	for _, f := range []Pane{PaneGames, PaneMeta} {
+		m.focus = f
+		view = m.View()
+		for _, want := range []string{"GAMES", "METADATA"} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("focus %v view must show %q\n%s", f, want, view)
+			}
+		}
+		if strings.Contains(view, "CONSOLES") {
+			t.Fatalf("focus %v view must hide consoles\n%s", f, view)
+		}
+	}
+	m = resizeModel(t, m, 40)
+	m.focus = PaneGames
+	view = m.View()
+	if !strings.Contains(view, "GAMES") {
+		t.Fatalf("tiny view must show focused pane\n%s", view)
+	}
+	for _, gone := range []string{"CONSOLES", "METADATA"} {
+		if strings.Contains(view, gone) {
+			t.Fatalf("tiny view must hide %q\n%s", gone, view)
+		}
+	}
+}
+
+// TestNoOverflowOnResize resizes up and down across breakpoints and
+// requires every rendered line to fit the terminal: the bar used to
+// overflow on narrow screens and stretch the whole view with it.
+func TestNoOverflowOnResize(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	for _, w := range []int{120, 100, 70, 60, 56, 40, 30, 24} {
+		for _, f := range []Pane{PaneConsoles, PaneGames, PaneMeta} {
+			mm := resizeModel(t, m, w)
+			mm.focus = f
+			mm.status = strings.Repeat("st", 60)
+			for i, ln := range strings.Split(mm.View(), "\n") {
+				if got := lipgloss.Width(ln); got > w {
+					t.Fatalf("w=%d focus=%v line %d overflows: %d\n%s", w, f, i, got, mm.View())
+				}
+			}
+		}
+		m = resizeModel(t, m, w)
+	}
+}
+
+func TestGameSwitchResetsMetaTop(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneGames
+	// Pretend the cursor sat deep in a long meta card.
+	m.metaCur = 5
+	m.meta.SetYOffset(3)
+	out, _ := m.Update(keyMsg("down")) // Battletoads -> Kirby
+	m = out.(Model)
+	if m.gameCur != 1 {
+		t.Fatalf("gameCur = %d", m.gameCur)
+	}
+	if m.metaCur != 0 {
+		t.Fatalf("meta cursor must reset on game switch, got %d", m.metaCur)
+	}
+	if m.meta.YOffset != 0 {
+		t.Fatalf("meta scroll must reset on game switch, got %d", m.meta.YOffset)
+	}
+	// The new game's title must be visible, not a stale deep tail.
+	view := m.View()
+	if !strings.Contains(view, "Kirby Mirror") {
+		t.Fatalf("new game title must show\n%s", view)
+	}
+}
+
+func TestMetaResyncsWidthOnFocusChange(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m = resizeModel(t, m, 70)
+	// Focus consoles: meta hidden, its viewport width collapses.
+	m.focus = PaneConsoles
+	m.sizeMeta()
+	m.refreshMeta()
+	if m.meta.Width != 10 {
+		t.Fatalf("hidden meta width = %d, want 10", m.meta.Width)
+	}
+	// Tab over to metadata: it must render full pane width again,
+	// not stay cut to ~10 cells by the stale viewport width.
+	out, _ := m.Update(keyMsg("tab")) // games
+	m = out.(Model)
+	out, _ = m.Update(keyMsg("tab")) // meta
+	m = out.(Model)
+	if m.meta.Width <= 10 {
+		t.Fatalf("shown meta width = %d, want full pane", m.meta.Width)
+	}
+	maxW := 0
+	for _, ln := range strings.Split(m.meta.View(), "\n") {
+		if w := lipgloss.Width(ln); w > maxW {
+			maxW = w
+		}
+	}
+	if maxW <= 10 {
+		t.Fatalf("meta lines cut to %d cells after focus change", maxW)
+	}
+	if maxW > m.meta.Width {
+		t.Fatalf("meta lines overflow pane: %d > %d", maxW, m.meta.Width)
+	}
+}
+
 func TestWrapSoftNoLoss(t *testing.T) {
 	// A spaceless hash must survive wrapping without "…" losses.
 	src := "aaa111bbb222ccc333ddd444eee555fff666ggg777hhh888iii999"
