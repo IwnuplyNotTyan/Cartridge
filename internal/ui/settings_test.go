@@ -51,7 +51,7 @@ func TestSettingsTabsOnTop(t *testing.T) {
 			break
 		}
 	}
-	for _, want := range []string{"LANGUAGE", "RECIPES", "PATHS", " | "} {
+	for _, want := range []string{"Language", "Recipes", "Paths", " | "} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("tab strip %q must contain %q\n%s", first, want, view)
 		}
@@ -67,7 +67,7 @@ func TestSettingsKeepsBarAndHelp(t *testing.T) {
 	out, _ := m.Update(keyMsg("?"))
 	m = out.(Model)
 	view := m.View()
-	if !strings.Contains(view, "LANGUAGE") || !strings.Contains(view, " | ") {
+	if !strings.Contains(view, "Language") || !strings.Contains(view, " | ") {
 		t.Fatalf("tabs must stay visible with help\n%s", view)
 	}
 	if !strings.Contains(view, "cartridge") {
@@ -124,8 +124,8 @@ func TestSettingsLanguageApplies(t *testing.T) {
 	}
 	defer i18n.Set(i18n.En)
 	view := m.View()
-	if !strings.Contains(view, "ЯЗЫК") {
-		t.Fatalf("tabs must be localized upper case\n%s", view)
+	if !strings.Contains(view, "Язык") {
+		t.Fatalf("tabs must be localized\n%s", view)
 	}
 	if m.status != "" {
 		t.Fatalf("language switch must not set bar status, got %q", m.status)
@@ -190,6 +190,34 @@ func TestSettingsNoHints(t *testing.T) {
 				t.Fatalf("%s tab must not show hint %q\n%s", name, hint, view)
 			}
 		}
+	}
+}
+
+func TestSettingsPathLabelsTitleCase(t *testing.T) {
+	i18n.Set(i18n.En)
+	for key, want := range map[string]string{
+		"sett.paths.games":   "Games",
+		"sett.paths.library": "Library",
+		"sett.paths.recipes": "Recipes",
+		"sett.paths.patches": "Patches",
+		"sett.paths.mods":    "Mods",
+		"sett.paths.saves":   "Saves",
+	} {
+		if got := i18n.T(key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabPaths
+	view := m.View()
+	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Saves:"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("paths tab must show label %q\n%s", want, view)
+		}
+	}
+	// Values keep their own case: the label is title-cased, not the path.
+	if strings.Contains(view, "SAVES:") {
+		t.Fatalf("labels must not be all caps\n%s", view)
 	}
 }
 

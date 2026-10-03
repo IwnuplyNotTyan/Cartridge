@@ -42,6 +42,21 @@ var (
 	metaID      = lipgloss.NewStyle().Foreground(idColor).Bold(true)
 )
 
+// idlePathRow renders "  Label: value" fitted to w cells where only the
+// path value is grey + italic; the label name stays plain.
+func idlePathRow(label, val string, w int) string {
+	prefix := "  " + label + ": "
+	valW := w - lipgloss.Width(prefix)
+	if valW < 1 {
+		valW = 1
+	}
+	line := prefix + pathIdle.Render(truncate(val, valW))
+	if pad := w - lipgloss.Width(line); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	return line
+}
+
 func titleFor(name string, focused bool, w int) string {
 	st := titleDim
 	if focused {

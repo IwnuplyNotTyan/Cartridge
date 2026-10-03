@@ -335,11 +335,11 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // renderSettingsTabs renders the top tab strip:
-// LANGUAGE | RECIPES | PATHS (active tab highlighted, upper case).
+// Language | Recipes | Paths (active tab highlighted).
 func (m Model) renderSettingsTabs(w int) string {
 	parts := make([]string, 0, NumSettingsTabs)
 	for t := SettingsTab(0); t < NumSettingsTabs; t++ {
-		title := strings.ToUpper(tabTitle(t))
+		title := tabTitle(t)
 		if t == m.settTab {
 			parts = append(parts, titleActive.Render(title))
 		} else {
@@ -447,8 +447,8 @@ func (m Model) renderPathsTab(w int) []string {
 		row := label + ": " + val
 		plain := fit("  "+truncate(row, w-2), w)
 		if m.isPathIdle(i) {
-			// Idle paths: grey + italic.
-			plain = pathIdle.Render(plain)
+			// Idle: only the path value is grey + italic, the name stays plain.
+			plain = idlePathRow(label, val, w)
 		} else {
 			plain = styledRow(plain)
 		}
