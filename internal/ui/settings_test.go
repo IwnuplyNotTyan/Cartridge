@@ -51,7 +51,7 @@ func TestSettingsTabsOnTop(t *testing.T) {
 			break
 		}
 	}
-	for _, want := range []string{"Language", "Recipes", "Paths", " | "} {
+	for _, want := range []string{"LANGUAGE", "RECIPES", "PATHS", " | "} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("tab strip %q must contain %q\n%s", first, want, view)
 		}
@@ -67,8 +67,8 @@ func TestSettingsKeepsBarAndHelp(t *testing.T) {
 	out, _ := m.Update(keyMsg("?"))
 	m = out.(Model)
 	view := m.View()
-	for _, want := range []string{"cartridge", "move up", "Language | Recipes | Paths"} {
-		_ = want
+	if !strings.Contains(view, "LANGUAGE") || !strings.Contains(view, " | ") {
+		t.Fatalf("tabs must stay visible with help\n%s", view)
 	}
 	if !strings.Contains(view, "cartridge") {
 		t.Fatalf("bar must stay in settings\n%s", view)
@@ -124,8 +124,14 @@ func TestSettingsLanguageApplies(t *testing.T) {
 	}
 	defer i18n.Set(i18n.En)
 	view := m.View()
-	if !strings.Contains(view, "Язык") {
-		t.Fatalf("tabs must be localized\n%s", view)
+	if !strings.Contains(view, "ЯЗЫК") {
+		t.Fatalf("tabs must be localized upper case\n%s", view)
+	}
+	if m.status != "" {
+		t.Fatalf("language switch must not set bar status, got %q", m.status)
+	}
+	if strings.Contains(view, "language:") || strings.Contains(view, "язык:") {
+		t.Fatalf("bar must not show language status\n%s", view)
 	}
 	// Config file must be written, recipes file must not be touched.
 	cfgPath := m.cfgFile
@@ -164,5 +170,50 @@ func TestSettingsPathsEditSaves(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "/new/games") {
 		t.Fatalf("config must persist path: %s", data)
+	}
+}
+
+func TestSettingsNoHints(t *testing.T) {
+	for tab, name := range map[SettingsTab]string{TabLang: "lang", TabRecipes: "recipes", TabPaths: "paths"} {
+		m := openSettings(t, settingsModel(t))
+		m.settTab = tab
+		view := m.View()
+		for _, hint := range []string{
+			"enter applies at once",
+			"patches overlay recipes in memory",
+			"enter edits",
+			"применяет сразу",
+			"накладываются поверх",
+			"редактирует",
+		} {
+			if strings.Contains(strings.ToLower(view), strings.ToLower(hint)) {
+				t.Fatalf("%s tab must not show hint %q\n%s", name, hint, view)
+			}
+		}
+	}
+}
+
+func TestSettingsIdlePathsItalicGrey(t *testing.T) {
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabPaths
+	m.settCur = 0
+	// Cursor row is active, the rest are idle (grey + italic).
+	if m.isPathIdle(0) {
+		t.Fatalf("cursor row must not be idle")
+	}
+	for _, i := range []int{1, 2, 3, 4, 5} {
+		if !m.isPathIdle(i) {
+			t.Fatalf("row %d must be idle (grey + italic)", i)
+		}
+	}
+	// The row being edited is never idle.
+	m.settEditing = true
+	m.settBuf = []rune("/x")
+	m.settCur = 2
+	if m.isPathIdle(2) {
+		t.Fatalf("editing row must not be idle")
+	}
+	if !m.isPathIdle(1) {
+		t.Fatalf("non-edited row must stay idle while editing")
 	}
 }

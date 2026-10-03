@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"cartridge/internal/config"
 	"cartridge/internal/emulate"
@@ -154,10 +153,7 @@ func (m *Model) applyLanguage(raw string) {
 		m.status = i18n.T("status.sett.save_fail", err)
 		return
 	}
-	m.status = i18n.T("status.sett.lang", i18n.T("sett.lang."+strings.TrimPrefix(m.langRaw, "auto")))
-	if m.langRaw == "auto" {
-		m.status = i18n.T("status.sett.lang", i18n.T("sett.lang.auto"))
-	}
+	m.status = ""
 }
 
 // reloadRecipes re-reads recipes+patches from disk and re-applies the overlay.
@@ -339,11 +335,11 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // renderSettingsTabs renders the top tab strip:
-// Language | Recipes | Paths (active tab highlighted).
+// LANGUAGE | RECIPES | PATHS (active tab highlighted, upper case).
 func (m Model) renderSettingsTabs(w int) string {
 	parts := make([]string, 0, NumSettingsTabs)
 	for t := SettingsTab(0); t < NumSettingsTabs; t++ {
-		title := tabTitle(t)
+		title := strings.ToUpper(tabTitle(t))
 		if t == m.settTab {
 			parts = append(parts, titleActive.Render(title))
 		} else {
@@ -391,8 +387,6 @@ func (m Model) renderLangTab(w int) []string {
 		_ = opt
 		lines = append(lines, plain)
 	}
-	lines = append(lines, "")
-	lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.lang.hint"), w), w)))
 	return lines
 }
 
@@ -425,10 +419,16 @@ func (m Model) renderRecipesTab(w int) []string {
 			lines = append(lines, plain)
 		}
 	}
-	lines = append(lines, "")
-	lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.recipes.hint"), w), w)))
-	_ = lipgloss.Width
 	return lines
+}
+
+// isPathIdle reports whether path row i renders as idle (grey + italic).
+// The row being edited and the cursor row are never idle.
+func (m Model) isPathIdle(i int) bool {
+	if m.settEditing && i == m.settCur {
+		return false
+	}
+	return i != m.settCur
 }
 
 func (m Model) renderPathsTab(w int) []string {
@@ -446,16 +446,13 @@ func (m Model) renderPathsTab(w int) []string {
 		}
 		row := label + ": " + val
 		plain := fit("  "+truncate(row, w-2), w)
-		if i == m.settCur {
+		if m.isPathIdle(i) {
+			// Idle paths: grey + italic.
+			plain = pathIdle.Render(plain)
+		} else {
 			plain = styledRow(plain)
 		}
 		lines = append(lines, plain)
-	}
-	lines = append(lines, "")
-	if m.settEditing && m.settCur < len(entries) {
-		lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.editing", string(m.settBuf)), w), w)))
-	} else {
-		lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.paths.hint"), w), w)))
 	}
 	return lines
 }

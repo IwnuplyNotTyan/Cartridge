@@ -34,6 +34,7 @@ var (
 	helpBadge   = lipgloss.NewStyle().Foreground(lipgloss.Color("#767676")).Background(tone(charmtone.Char))
 	barStyle    = lipgloss.NewStyle().Foreground(tone(charmtone.Smoke)).Background(lipgloss.Color("#262626"))
 	infoStyle   = lipgloss.NewStyle().Foreground(dimText)
+	pathIdle    = lipgloss.NewStyle().Foreground(dimText).Italic(true)
 	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(tone(charmtone.Butter)).Bold(true)
 	curStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
 	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(metaKeyWidth)
