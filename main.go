@@ -163,7 +163,7 @@ func main() {
 		ui.WithRecipes(recipes),
 		ui.WithBaseRecipes(base),
 		ui.WithPatches(patches),
-		ui.WithPaths(cfg.ConfigFile, cfg.Recipes, cfg.Patches, cfg.ModsDir, cfg.SavesDir),
+		ui.WithPaths(cfg.ConfigFile, cfg.Recipes, cfg.Patches, cfg.ModsDir, cfg.SavesDir, cfg.CheatsDir),
 		ui.WithLangRaw(rawLang(*lang, cfg)),
 		ui.WithPlaytime(play),
 		ui.WithOverrides(over))

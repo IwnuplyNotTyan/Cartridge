@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -571,6 +572,319 @@ func TestMetaResyncsWidthOnFocusChange(t *testing.T) {
 	}
 	if maxW > m.meta.Width {
 		t.Fatalf("meta lines overflow pane: %d > %d", maxW, m.meta.Width)
+	}
+}
+
+const testCHT = `cheats = 2
+
+cheat0_desc = "Infinite Lives"
+cheat0_code = "AAA"
+cheat0_enable = false
+
+cheat1_desc = "Health"
+cheat1_code = "BBB"
+cheat1_enable = true
+`
+
+// cheatTestModel builds a browser model whose nes recipe points cheats
+// at chtPath (a plain absolute path needs no placeholders).
+func cheatTestModel(t *testing.T, chtPath string) Model {
+	t.Helper()
+	i18n.Set(i18n.En)
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args:   []string{"{rom}"},
+		Cheats: emulate.Cheats{Supported: true, Path: chtPath}}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}))
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m
+}
+
+func TestMetaCheatsExpand(t *testing.T) {
+	cht := filepath.Join(t.TempDir(), "g.cht")
+	if err := os.WriteFile(cht, []byte(testCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := cheatTestModel(t, cht)
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if !m.cheatsOpen {
+		t.Fatalf("enter must expand the list")
+	}
+	view := m.View()
+	for _, want := range []string{"Infinite Lives", "Health"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expanded list must show %q\n%s", want, view)
+		}
+	}
+	// Expanding normalizes everything to enabled on disk.
+	data, err := os.ReadFile(cht)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(data), "_enable = true"); got != 2 {
+		t.Fatalf("all cheats must save enabled:\n%s", data)
+	}
+}
+
+func TestMetaCheatRowCopies(t *testing.T) {
+	cht := filepath.Join(t.TempDir(), "g.cht")
+	if err := os.WriteFile(cht, []byte(testCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := cheatTestModel(t, cht)
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m = metaCursorTo(t, m, "cheat")
+	// Enter on a cheat copies its code; space does the same.
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEnter}, keyMsg(" ")} {
+		out, cmd := m.Update(key)
+		m = out.(Model)
+		if cmd == nil {
+			t.Fatalf("cheat row must copy")
+		}
+		if !strings.Contains(m.status, "copied") {
+			t.Fatalf("status = %q", m.status)
+		}
+	}
+}
+
+// pileLiveTestModel builds a browser model whose recipe cheat template
+// points at a missing live path while the pile dir holds a match.
+func pileLiveTestModel(t *testing.T, live, pileDir, pileBody string) Model {
+	t.Helper()
+	i18n.Set(i18n.En)
+	if err := os.WriteFile(filepath.Join(pileDir, "a.cht"), []byte(pileBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args:   []string{"{rom}"},
+		Cheats: emulate.Cheats{Supported: true, Path: live}}
+	ov, err := overrides.Load(filepath.Join(t.TempDir(), "overrides.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}),
+		WithOverrides(ov))
+	m.cheatsDir = pileDir
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m
+}
+
+func TestMetaMaterializeFromPile(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "live", "game.cht")
+	m := pileLiveTestModel(t, live, dir, testCHT)
+	m = metaCursorTo(t, m, "cheats")
+	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
+		t.Fatalf("missing live file must show, got %q", got)
+	}
+	// Expanding copies the pile match into place, all enabled.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	data, err := os.ReadFile(live)
+	if err != nil {
+		t.Fatalf("live file must be created: %v", err)
+	}
+	if !strings.Contains(string(data), "Infinite Lives") {
+		t.Fatalf("pile content must land:\n%s", data)
+	}
+	if got := strings.Count(string(data), "_enable = true"); got != 2 {
+		t.Fatalf("copy must save all enabled:\n%s", data)
+	}
+	if view := m.View(); !strings.Contains(view, "Infinite Lives") {
+		t.Fatalf("copied cheats must show\n%s", view)
+	}
+}
+
+func TestMetaMaterializeSkeleton(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "live", "game.cht")
+	m := pileLiveTestModel(t, live, dir, "cheats = 0\n")
+	// Pile parses to nothing: expanding creates an empty skeleton instead.
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	data, err := os.ReadFile(live)
+	if err != nil {
+		t.Fatalf("skeleton must be created: %v", err)
+	}
+	if !strings.Contains(string(data), "cheats = 0") {
+		t.Fatalf("skeleton must be empty:\n%s", data)
+	}
+}
+
+func TestMetaCheatsEscCollapse(t *testing.T) {
+	cht := filepath.Join(t.TempDir(), "g.cht")
+	if err := os.WriteFile(cht, []byte(testCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := cheatTestModel(t, cht)
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.cheatsOpen {
+		t.Fatalf("esc must collapse the list")
+	}
+	if view := m.View(); strings.Contains(view, "Infinite Lives") {
+		t.Fatalf("collapsed list must hide cheats\n%s", view)
+	}
+}
+
+func TestMetaCheatsNoFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.cht")
+	m := cheatTestModel(t, missing)
+	m = metaCursorTo(t, m, "cheats")
+	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
+		t.Fatalf("missing file must show, got %q", got)
+	}
+	// Enter materializes an empty skeleton and opens it.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if !m.cheatsOpen {
+		t.Fatalf("expand must open the skeleton")
+	}
+	data, err := os.ReadFile(missing)
+	if err != nil {
+		t.Fatalf("skeleton must be created: %v", err)
+	}
+	if !strings.Contains(string(data), "cheats = 0") {
+		t.Fatalf("skeleton must be empty:\n%s", data)
+	}
+}
+
+// metaRowText returns the joined plain text of the first meta row of
+// kind. Unlike View assertions it never breaks on line wraps, which move
+// with the temp-dir path length.
+func metaRowText(t *testing.T, m Model, kind string) string {
+	t.Helper()
+	for _, r := range m.metaRows {
+		if !r.sep && r.kind == kind {
+			return strings.Join(r.lines, " ")
+		}
+	}
+	t.Fatalf("no %q row in meta", kind)
+	return ""
+}
+
+func TestMetaCheatsBadFile(t *testing.T) {
+	dir := t.TempDir() // a directory is not a readable cheat file
+	m := cheatTestModel(t, dir)
+	m = metaCursorTo(t, m, "cheats")
+	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(bad file)") {
+		t.Fatalf("unreadable file must show, got %q", got)
+	}
+}
+
+func TestMetaCheatsCloseOnGameSwitch(t *testing.T) {
+	cht := filepath.Join(t.TempDir(), "g.cht")
+	if err := os.WriteFile(cht, []byte(testCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := cheatTestModel(t, cht)
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m.focus = PaneGames
+	out, _ = m.Update(keyMsg("down")) // Battletoads(nes) -> Kirby(gba)
+	m = out.(Model)
+	if m.cheatsOpen {
+		t.Fatalf("game switch must close the list")
+	}
+	if view := m.View(); strings.Contains(view, "Infinite Lives") {
+		t.Fatalf("cheats must follow the game\n%s", view)
+	}
+}
+
+// pileTestModel builds a browser model with no recipe cheat path and a
+// shared cheats dir + overrides store, like a dumped cheat pile.
+func pileTestModel(t *testing.T, dir, ovPath string) Model {
+	t.Helper()
+	i18n.Set(i18n.En)
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args:   []string{"{rom}"},
+		Cheats: emulate.Cheats{Supported: true}}
+	ov, err := overrides.Load(ovPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}),
+		WithOverrides(ov))
+	m.cheatsDir = dir
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m
+}
+
+const pileCHT = `cheats = 2
+
+cheat0_desc = "Pile One"
+cheat0_code = "AAA"
+cheat0_enable = true
+
+cheat1_desc = "Pile Two"
+cheat1_code = "BBB"
+cheat1_enable = true
+`
+
+func TestMetaCheatsAutoDetect(t *testing.T) {
+	dir := t.TempDir()
+	// ROM base is "a" (/x/a.nes); title file must not shadow it.
+	if err := os.WriteFile(filepath.Join(dir, "a.cht"), []byte(pileCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Battletoads.cht"), []byte("cheats = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := pileTestModel(t, dir, filepath.Join(t.TempDir(), "overrides.json"))
+	m = metaCursorTo(t, m, "cheats")
+	// ROM base wins over title: the pile file resolves, not the empty one.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if view := m.View(); !strings.Contains(view, "Pile One") {
+		t.Fatalf("auto-detect must resolve the pile file\n%s", view)
+	}
+}
+
+func TestMetaCheatsTemplateWins(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.cht"), []byte(pileCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	explicit := filepath.Join(t.TempDir(), "hand.cht")
+	if err := os.WriteFile(explicit, []byte(testCHT), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	i18n.Set(i18n.En)
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args:   []string{"{rom}"},
+		Cheats: emulate.Cheats{Supported: true, Path: explicit}}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}))
+	m.cheatsDir = dir
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	m = metaCursorTo(t, m, "cheats")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if view := m.View(); !strings.Contains(view, "Infinite Lives") {
+		t.Fatalf("explicit path must win over the pile\n%s", view)
+	}
+}
+
+func TestMetaCheatsPileMissShowsNoFile(t *testing.T) {
+	m := pileTestModel(t, t.TempDir(), filepath.Join(t.TempDir(), "overrides.json"))
+	m = metaCursorTo(t, m, "cheats")
+	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
+		t.Fatalf("pile miss must show no file, not bad file, got %q", got)
 	}
 }
 

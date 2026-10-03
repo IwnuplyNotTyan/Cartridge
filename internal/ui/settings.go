@@ -49,6 +49,7 @@ func pathEntries() []pathEntry {
 		{"sett.paths.patches", func(m *Model) string { return m.patchesPath }, func(m *Model, v string) { m.patchesPath = v }},
 		{"sett.paths.mods", func(m *Model) string { return m.modsDir }, func(m *Model, v string) { m.modsDir = v }},
 		{"sett.paths.saves", func(m *Model) string { return m.savesDir }, func(m *Model, v string) { m.savesDir = v }},
+		{"sett.paths.cheats", func(m *Model) string { return m.cheatsDir }, func(m *Model, v string) { m.cheatsDir = v }},
 	}
 }
 
@@ -119,6 +120,7 @@ func recipeFields() []recipeField {
 		{"emulator", "sett.recipes.emulator"},
 		{"args", "sett.recipes.args"},
 		{"cores", "sett.recipes.cores"},
+		{"core_names", "sett.recipes.core_names"},
 		{"consoles", "sett.recipes.consoles"},
 		{"extensions", "sett.recipes.extensions"},
 		{"games", "sett.recipes.games"},
@@ -153,13 +155,14 @@ func (m *Model) persistSettings() error {
 		lang = "auto"
 	}
 	f := config.File{
-		RomDir:   m.romDir,
-		Library:  m.libPath,
-		Lang:     lang,
-		Recipes:  m.recipesPath,
-		Patches:  m.patchesPath,
-		ModsDir:  m.modsDir,
-		SavesDir: m.savesDir,
+		RomDir:    m.romDir,
+		Library:   m.libPath,
+		Lang:      lang,
+		Recipes:   m.recipesPath,
+		Patches:   m.patchesPath,
+		ModsDir:   m.modsDir,
+		SavesDir:  m.savesDir,
+		CheatsDir: m.cheatsDir,
 	}
 	if err := config.SaveFile(path, f); err != nil {
 		return err
@@ -277,6 +280,9 @@ func (m *Model) saveRecipeEdit() {
 	case "cores":
 		cs := parseCores(v)
 		p.Cores = &cs
+	case "core_names":
+		ns := parseCoreNames(v)
+		p.CoreNames = &ns
 	case "consoles":
 		vs := splitList(v)
 		p.Consoles = &vs
@@ -350,6 +356,8 @@ func fieldBuffer(field string, eff emulate.Recipe) string {
 		return joinArgs(eff.Args)
 	case "cores":
 		return joinCores(eff.Cores)
+	case "core_names":
+		return joinCoreNames(eff.CoreNames)
 	case "consoles":
 		return strings.Join(eff.Consoles, ", ")
 	case "extensions":
@@ -455,6 +463,43 @@ func parseCores(s string) map[string][]string {
 		if len(cores) > 0 {
 			out[id] = cores
 		}
+	}
+	return out
+}
+
+// joinCoreNames renders a console→display-name map as one editable line:
+// "gba=mGBA; nes=Nestopia". Consoles sort for a stable view.
+func joinCoreNames(names map[string]string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(names))
+	for id := range names {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, id+"="+names[id])
+	}
+	return strings.Join(parts, "; ")
+}
+
+// parseCoreNames parses a "gba=mGBA; nes=Nestopia" line back into
+// a console→display-name map. Console ids lowercase, display names keep
+// their case; empty items drop out.
+func parseCoreNames(s string) map[string]string {
+	out := map[string]string{}
+	for _, group := range strings.Split(s, ";") {
+		id, name, ok := strings.Cut(group, "=")
+		if !ok {
+			continue
+		}
+		id = strings.ToLower(strings.TrimSpace(id))
+		if name = strings.TrimSpace(name); id == "" || name == "" {
+			continue
+		}
+		out[id] = name
 	}
 	return out
 }
@@ -973,6 +1018,8 @@ func fieldDisplay(name string, base, eff emulate.Recipe) string {
 		val = joinArgs(eff.Args)
 	case "cores":
 		val = joinCores(eff.Cores)
+	case "core_names":
+		val = joinCoreNames(eff.CoreNames)
 	case "consoles":
 		val = strings.Join(eff.Consoles, ", ")
 	case "extensions":

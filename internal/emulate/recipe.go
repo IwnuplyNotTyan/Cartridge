@@ -25,16 +25,17 @@ import (
 
 // Placeholders supported in args, workdir and feature paths.
 const (
-	phRom     = "rom"     // ROM path on disk (archive when zipped)
-	phInner   = "inner"   // entry inside the archive, if any
-	phDir     = "dir"     // ROM directory
-	phTitle   = "title"   // game title
-	phID      = "id"      // stable full ID
-	phShortID = "shortid" // 12-char ID prefix
-	phConsole = "console" // console id (nes, gba, …)
-	phExt     = "ext"     // ROM extension with dot (.nes)
-	phEmuDir  = "emu_dir" // emulator binary directory
-	phCore    = "core"    // selected core for the game console (see Cores)
+	phRom      = "rom"       // ROM path on disk (archive when zipped)
+	phInner    = "inner"     // entry inside the archive, if any
+	phDir      = "dir"       // ROM directory
+	phTitle    = "title"     // game title
+	phID       = "id"        // stable full ID
+	phShortID  = "shortid"   // 12-char ID prefix
+	phConsole  = "console"   // console id (nes, gba, …)
+	phExt      = "ext"       // ROM extension with dot (.nes)
+	phEmuDir   = "emu_dir"   // emulator binary directory
+	phCore     = "core"      // selected core for the game console (see Cores)
+	phCoreName = "core_name" // core display name, else the core file stem
 )
 
 // Cheats describes cheat-file support (path is a placeholder template).
@@ -73,6 +74,25 @@ type Recipe struct {
 	// workdir and feature paths. Needed by multi-system frontends
 	// like RetroArch where each console needs its own core.
 	Cores map[string][]string `json:"cores,omitempty"`
+	// CoreNames maps a console id to the folder name the frontend uses
+	// for it (e.g. RetroArch core display names like "mGBA"), expanding
+	// as {core_name}. Without an entry the core file stem is used.
+	CoreNames map[string]string `json:"core_names,omitempty"`
+}
+
+// CoreNameFor resolves the {core_name} value for a console: the explicit
+// display name wins, otherwise the core file stem. Lookup is
+// case-insensitive; ok is false when neither source covers the console.
+func (r Recipe) CoreNameFor(console string) (name string, ok bool) {
+	for id, n := range r.CoreNames {
+		if strings.EqualFold(id, console) && strings.TrimSpace(n) != "" {
+			return strings.TrimSpace(n), true
+		}
+	}
+	if core, err := r.CoreFor(console); err == nil {
+		return coreName(core), true
+	}
+	return "", false
 }
 
 // CoresFor returns the core list for a console, lookup case-insensitive.
@@ -215,6 +235,9 @@ func (r Recipe) Command(g rom.Game) (*exec.Cmd, error) {
 		}
 		vars[phCore] = core
 	}
+	if name, ok := r.CoreNameFor(g.ConsoleID); ok {
+		vars[phCoreName] = name
+	}
 	args := make([]string, len(r.Args))
 	for i, a := range r.Args {
 		s, err := expand(a, vars)
@@ -253,6 +276,9 @@ func (r Recipe) Expand(tmpl string, g rom.Game) (string, error) {
 			return "", err
 		}
 		vars[phCore] = core
+	}
+	if name, ok := r.CoreNameFor(g.ConsoleID); ok {
+		vars[phCoreName] = name
 	}
 	return expand(tmpl, vars)
 }
@@ -296,7 +322,18 @@ func expand(tmpl string, vars map[string]string) (string, error) {
 	if missing != "" {
 		return "", fmt.Errorf("unknown placeholder {%s}", missing)
 	}
-	return out, nil
+	return expandHome(out), nil
+}
+
+// expandHome resolves a leading ~ to the user's home directory, so
+// ~/.config/... templates work without a shell (same rule as config paths).
+func expandHome(s string) string {
+	if s == "~" || strings.HasPrefix(s, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(s, "~"))
+		}
+	}
+	return s
 }
 
 // LookupBinary resolves the emulator binary to a full path.
@@ -318,6 +355,20 @@ func LookupBinary(emulator string) (string, bool) {
 	return "", false
 }
 
+// coreName strips the directory and extension off a core path:
+// "/usr/lib/nestopia_libretro.so" becomes "nestopia_libretro".
+func coreName(core string) string {
+	base := filepath.Base(core)
+	if ext := filepath.Ext(base); ext != "" {
+		base = strings.TrimSuffix(base, ext)
+	}
+	return base
+}
+
+// emuDir is the emulator binary's directory: PATH lookup first, then the
+// literal path's dir. For AppImages that is the folder holding the
+// .AppImage file — not where the frontend keeps its own data, so prefer
+// ~/.config/... templates for frontends like RetroArch.
 func emuDir(emulator string) string {
 	if p, ok := LookupBinary(emulator); ok {
 		return filepath.Dir(p)
@@ -366,17 +417,21 @@ func Example() []Recipe {
 			Note:       "standalone NES emulator",
 		},
 		{
+			// Frontend data lives under ~/.config, not next to the binary
+			// (which may be an AppImage anywhere) — hence the ~/ path.
 			Name:         "retroarch-gba",
 			Consoles:     []string{"gba"},
 			Emulator:     "retroarch",
 			Args:         []string{"-L", "mgba_libretro.so", "{rom}"},
-			Cheats:       Cheats{Supported: true, Path: "{emu_dir}/cheats/{shortid}.cht"},
+			Cheats:       Cheats{Supported: true, Path: "~/.config/retroarch/cheats/{shortid}.cht"},
 			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
 			Mods:         Mods{Supported: true, Path: "{dir}/mods/{title}"},
 		},
 		{
 			// Multi-system frontend: one core per console, several where
 			// there is a choice (the first listed is the default {core}).
+			// core_names must match the frontend's folders; without an
+			// entry {core_name} falls back to the core file stem.
 			Name:     "retroarch-cores",
 			Consoles: []string{"nes", "snes", "gb", "gbc", "gba", "genesis", "gamegear", "n64"},
 			Emulator: "retroarch",
@@ -391,7 +446,17 @@ func Example() []Recipe {
 				"gamegear": {"genesis_plus_gx_libretro.so"},
 				"n64":      {"mupen64plus_next_libretro.so", "parallel_n64_libretro.so"},
 			},
-			Cheats:       Cheats{Supported: true, Path: "{emu_dir}/cheats/{shortid}.cht"},
+			CoreNames: map[string]string{
+				"nes":      "Nestopia",
+				"snes":     "Snes9x",
+				"gb":       "Gambatte",
+				"gbc":      "Gambatte",
+				"gba":      "mGBA",
+				"genesis":  "Genesis Plus GX",
+				"gamegear": "Genesis Plus GX",
+				"n64":      "Mupen64Plus-Next",
+			},
+			Cheats:       Cheats{Supported: true, Path: "~/.config/retroarch/cheats/{core_name}/{title}.cht"},
 			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
 			Note:         "multi-system frontend, per-console cores",
 		},

@@ -18,6 +18,7 @@ func cleanEnv(t *testing.T, home string) {
 	t.Setenv(EnvLang, "")
 	t.Setenv(EnvConfig, "")
 	t.Setenv(EnvRecipes, "")
+	t.Setenv(EnvCheats, "")
 	t.Setenv("LANG", "en_US.UTF-8")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LANGUAGE", "")
@@ -137,6 +138,46 @@ func TestResolveRecipesPath(t *testing.T) {
 	}
 	if c.Recipes != "/flag/recipes.json" {
 		t.Fatalf("flag recipes broken: %+v", c)
+	}
+}
+
+func TestResolveCheatsDir(t *testing.T) {
+	home := t.TempDir()
+	cleanEnv(t, home)
+	c, err := Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := filepath.Join(home, ".local", "share", "cartridge", "cheats")
+	if c.CheatsDir != want {
+		t.Fatalf("CheatsDir = %q, want %q", c.CheatsDir, want)
+	}
+	t.Setenv(EnvCheats, "/env/cheats")
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.CheatsDir != "/env/cheats" {
+		t.Fatalf("env cheats broken: %+v", c)
+	}
+	// File value applies when env is clear; ToFile round-trips it.
+	t.Setenv(EnvCheats, "")
+	cfgDir := filepath.Join(home, ".config", "cartridge")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"cheats_dir": "/file/cheats"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.CheatsDir != "/file/cheats" {
+		t.Fatalf("file cheats broken: %+v", c)
+	}
+	if f := c.ToFile(); f.CheatsDir != "/file/cheats" {
+		t.Fatalf("ToFile cheats = %q", f.CheatsDir)
 	}
 }
 

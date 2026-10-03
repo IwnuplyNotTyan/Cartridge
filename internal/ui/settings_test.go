@@ -23,7 +23,7 @@ func settingsModel(t *testing.T) Model {
 		WithRecipes(eff),
 		WithBaseRecipes(base),
 		WithPatches(patches),
-		WithPaths(filepath.Join(t.TempDir(), "config.json"), "/r/recipes.json", "/r/patches.json", "/m", "/s"),
+		WithPaths(filepath.Join(t.TempDir(), "config.json"), "/r/recipes.json", "/r/patches.json", "/m", "/s", "/c"),
 		WithLangRaw("auto"),
 	)
 	return sizedModel(t, m)
@@ -135,7 +135,7 @@ func moveTestModel(t *testing.T) (Model, string) {
 		WithRecipes(emulate.ApplyPatches(loaded, patches)),
 		WithBaseRecipes(loaded),
 		WithPatches(patches),
-		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s"),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s", "/c"),
 		WithLangRaw("auto"),
 	)
 	m = sizedModel(t, m)
@@ -247,6 +247,48 @@ func TestSettingsCoresEditSavesPatch(t *testing.T) {
 	}
 }
 
+func TestSettingsCoreNamesEditSavesPatch(t *testing.T) {
+	m, _ := moveTestModel(t)
+	m.settCur = 0 // r1
+	m.startRecipeEdit("core_names")
+	if !m.settEditing || m.settPatchField != "core_names" {
+		t.Fatalf("core_names edit not started: editing=%v field=%q", m.settEditing, m.settPatchField)
+	}
+	m.settBuf = []rune("gba=mGBA; nes=Nestopia")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if m.settEditing {
+		t.Fatalf("still editing: %q", m.status)
+	}
+	got := m.recipes[0].CoreNames
+	if len(got) != 2 || got["gba"] != "mGBA" || got["nes"] != "Nestopia" {
+		t.Fatalf("effective core_names broken: %+v", got)
+	}
+	if view := m.View(); !strings.Contains(view, "core names:") || !strings.Contains(view, "gba=mGBA") {
+		t.Fatalf("core names row must show\n%s", view)
+	}
+	data, err := os.ReadFile(m.patchesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"core_names"`) {
+		t.Fatalf("patches file must carry core_names: %s", data)
+	}
+}
+
+func TestCoreNamesParseJoin(t *testing.T) {
+	m := parseCoreNames("gba=mGBA; nes=Nestopia; junk; =x; snes= ")
+	if len(m) != 2 || m["gba"] != "mGBA" {
+		t.Fatalf("parse broken: %+v", m)
+	}
+	if got := joinCoreNames(m); got != "gba=mGBA; nes=Nestopia" {
+		t.Fatalf("join = %q", got)
+	}
+	if len(parseCoreNames("  ")) != 0 {
+		t.Fatalf("empty must stay empty")
+	}
+}
+
 // metaRecipeValue returns the browser meta "recipe" row text.
 func metaRecipeValue(t *testing.T, m Model) string {
 	t.Helper()
@@ -309,7 +351,7 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 		WithRecipes(emulate.ApplyPatches(loaded, patches)),
 		WithBaseRecipes(loaded),
 		WithPatches(patches),
-		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s"),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s", "/c"),
 		WithLangRaw("auto"),
 	)
 	m = sizedModel(t, m)
@@ -414,6 +456,7 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 		"sett.paths.patches": "Patches",
 		"sett.paths.mods":    "Mods",
 		"sett.paths.saves":   "Saves",
+		"sett.paths.cheats":  "Cheats",
 	} {
 		if got := i18n.T(key); got != want {
 			t.Fatalf("%s = %q, want %q", key, got, want)
@@ -422,7 +465,7 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabPaths
 	view := m.View()
-	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Saves:"} {
+	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Saves:", "Cheats:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("paths tab must show label %q\n%s", want, view)
 		}

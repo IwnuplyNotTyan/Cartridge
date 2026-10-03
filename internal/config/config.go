@@ -23,17 +23,19 @@ const (
 	EnvPatches = "CARTRIDGE_PATCHES"
 	EnvMods    = "CARTRIDGE_MODS_DIR"
 	EnvSaves   = "CARTRIDGE_SAVES_DIR"
+	EnvCheats  = "CARTRIDGE_CHEATS_DIR"
 )
 
 // File is the on-disk JSON config (~/.config/cartridge/config.json).
 type File struct {
-	RomDir   string `json:"rom_dir"`
-	Library  string `json:"library"`
-	Lang     string `json:"lang"`
-	Recipes  string `json:"recipes"`
-	Patches  string `json:"patches,omitempty"`
-	ModsDir  string `json:"mods_dir,omitempty"`
-	SavesDir string `json:"saves_dir,omitempty"`
+	RomDir    string `json:"rom_dir"`
+	Library   string `json:"library"`
+	Lang      string `json:"lang"`
+	Recipes   string `json:"recipes"`
+	Patches   string `json:"patches,omitempty"`
+	ModsDir   string `json:"mods_dir,omitempty"`
+	SavesDir  string `json:"saves_dir,omitempty"`
+	CheatsDir string `json:"cheats_dir,omitempty"`
 }
 
 // Config is the fully resolved runtime configuration.
@@ -45,6 +47,7 @@ type Config struct {
 	Patches    string
 	ModsDir    string
 	SavesDir   string
+	CheatsDir  string
 	ConfigFile string // file actually read ("" when none)
 }
 
@@ -95,6 +98,18 @@ func DefaultSavesDir() string {
 		return "saves"
 	}
 	return filepath.Join(home, ".local", "share", "cartridge", "saves")
+}
+
+// DefaultCheatsDir returns the standard directory for cheat files.
+func DefaultCheatsDir() string {
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return filepath.Join(xdg, "cartridge", "cheats")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "cheats"
+	}
+	return filepath.Join(home, ".local", "share", "cartridge", "cheats")
 }
 
 // DefaultFilePath returns the standard config file location.
@@ -166,6 +181,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		Patches:    expandPath(firstNonEmpty(os.Getenv(EnvPatches), f.Patches, DefaultPatchesPath())),
 		ModsDir:    expandPath(firstNonEmpty(os.Getenv(EnvMods), f.ModsDir, DefaultModsDir())),
 		SavesDir:   expandPath(firstNonEmpty(os.Getenv(EnvSaves), f.SavesDir, DefaultSavesDir())),
+		CheatsDir:  expandPath(firstNonEmpty(os.Getenv(EnvCheats), f.CheatsDir, DefaultCheatsDir())),
 		ConfigFile: used,
 	}, nil
 }
@@ -216,13 +232,14 @@ func (c Config) ToFile() File {
 		lang = "en"
 	}
 	return File{
-		RomDir:   c.RomDir,
-		Library:  c.Library,
-		Lang:     lang,
-		Recipes:  c.Recipes,
-		Patches:  c.Patches,
-		ModsDir:  c.ModsDir,
-		SavesDir: c.SavesDir,
+		RomDir:    c.RomDir,
+		Library:   c.Library,
+		Lang:      lang,
+		Recipes:   c.Recipes,
+		Patches:   c.Patches,
+		ModsDir:   c.ModsDir,
+		SavesDir:  c.SavesDir,
+		CheatsDir: c.CheatsDir,
 	}
 }
 

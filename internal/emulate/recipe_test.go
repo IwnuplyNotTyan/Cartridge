@@ -3,6 +3,7 @@ package emulate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cartridge/internal/rom"
@@ -206,6 +207,124 @@ func TestCommandCorePlaceholder(t *testing.T) {
 	plain := Recipe{Name: "plain", Emulator: "retroarch", Args: []string{"-L", "{core}", "{rom}"}}
 	if _, err := plain.Command(nesGame()); err == nil {
 		t.Fatalf("Command must fail on {core} without cores")
+	}
+}
+
+func TestCoreNamePlaceholder(t *testing.T) {
+	r := Recipe{Name: "ra", Emulator: "retroarch",
+		Args:  []string{"-L", "{core}", "--cfg", "{core_name}.cfg"},
+		Cores: map[string][]string{"nes": {"/usr/lib/nestopia_libretro.so"}}}
+	cmd, err := r.Command(nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"retroarch", "-L", "/usr/lib/nestopia_libretro.so", "--cfg", "nestopia_libretro.cfg"}
+	for i := range want {
+		if cmd.Args[i] != want[i] {
+			t.Fatalf("args = %q, want %q", cmd.Args, want)
+		}
+	}
+	// {core_name} without any Cores map stays an unknown placeholder.
+	plain := Recipe{Name: "plain", Emulator: "retroarch", Args: []string{"{core_name}"}}
+	if _, err := plain.Command(nesGame()); err == nil {
+		t.Fatalf("Command must fail on {core_name} without cores")
+	}
+}
+
+func TestExpandTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	r := Recipe{Name: "ra", Emulator: "retroarch", Args: []string{"{rom}"}}
+	got, err := r.Expand("~/.config/retroarch/cheats/{title}.cht", nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".config/retroarch/cheats/Battletoads.cht")
+	if got != want {
+		t.Fatalf("tilde = %q, want %q", got, want)
+	}
+	// Non-tilde templates pass through untouched.
+	got, err = r.Expand("{emu_dir}/cheats/{title}.cht", nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(got, "/cheats/Battletoads.cht") {
+		t.Fatalf("plain template broken: %q", got)
+	}
+}
+
+func TestExampleCheatPathsResolve(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, r := range Example() {
+		if !strings.HasPrefix(r.Name, "retroarch") {
+			continue
+		}
+		got, err := r.Expand(r.Cheats.Path, nesGame())
+		if err != nil {
+			t.Fatalf("%s cheats path must expand: %v", r.Name, err)
+		}
+		if !filepath.IsAbs(got) {
+			t.Fatalf("%s cheats path must be absolute: %q", r.Name, got)
+		}
+	}
+}
+
+func TestCoreNameFor(t *testing.T) {
+	r := Recipe{Name: "ra",
+		Cores: map[string][]string{
+			"nes":  {"/usr/lib/nestopia_libretro.so"},
+			"snes": {"/usr/lib/snes9x_libretro.so"},
+		},
+		CoreNames: map[string]string{"gba": "mGBA", "snes": " "}}
+	// Explicit display name wins, case-insensitively.
+	if got, ok := r.CoreNameFor("GBA"); !ok || got != "mGBA" {
+		t.Fatalf("CoreNameFor(gba) = %q, %v", got, ok)
+	}
+	// Blank entry falls back to the core file stem.
+	if got, ok := r.CoreNameFor("snes"); !ok || got != "snes9x_libretro" {
+		t.Fatalf("CoreNameFor(snes) = %q, %v", got, ok)
+	}
+	// Neither source covers the console.
+	if _, ok := r.CoreNameFor("n64"); ok {
+		t.Fatalf("CoreNameFor(n64) must miss")
+	}
+	// Display names work without any Cores map.
+	bare := Recipe{Name: "bare", CoreNames: map[string]string{"nes": "Nestopia"}}
+	if got, ok := bare.CoreNameFor("nes"); !ok || got != "Nestopia" {
+		t.Fatalf("CoreNameFor without cores = %q, %v", got, ok)
+	}
+	// ...but {core} still needs real cores.
+	bareCmd := Recipe{Name: "bare", Emulator: "retroarch",
+		Args:      []string{"-L", "{core}", "{rom}"},
+		CoreNames: map[string]string{"nes": "Nestopia"}}
+	if _, err := bareCmd.Command(nesGame()); err == nil {
+		t.Fatalf("Command must fail on {core} without cores")
+	}
+	cmd, err := (Recipe{Name: "bare", Emulator: "retroarch",
+		Args:      []string{"{core_name}"},
+		CoreNames: map[string]string{"nes": "Nestopia"}}).Command(nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Args[1] != "Nestopia" {
+		t.Fatalf("{core_name} without cores = %q", cmd.Args)
+	}
+}
+
+func TestPatchCoreNamesApply(t *testing.T) {
+	base := []Recipe{{Name: "ra", Emulator: "retroarch",
+		Cores: map[string][]string{"nes": {"a.so"}}}}
+	names := map[string]string{"nes": "Nestopia"}
+	patched := ApplyPatches(base, []RecipePatch{{Recipe: "ra", CoreNames: &names}})
+	if got := patched[0].CoreNames["nes"]; got != "Nestopia" {
+		t.Fatalf("core_names patch broken: %+v", patched[0].CoreNames)
+	}
+	if len(base[0].CoreNames) != 0 {
+		t.Fatalf("base must stay untouched: %+v", base[0].CoreNames)
+	}
+	if got, ok := patched[0].CoreNameFor("nes"); !ok || got != "Nestopia" {
+		t.Fatalf("patched CoreNameFor = %q, %v", got, ok)
 	}
 }
 

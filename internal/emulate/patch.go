@@ -25,6 +25,7 @@ type RecipePatch struct {
 	Mods         *Mods                `json:"mods,omitempty"`
 	Note         *string              `json:"note,omitempty"`
 	Cores        *map[string][]string `json:"cores,omitempty"`
+	CoreNames    *map[string]string   `json:"core_names,omitempty"`
 }
 
 type patchFile struct {
@@ -168,6 +169,13 @@ func ApplyPatches(base []Recipe, patches []RecipePatch) []Recipe {
 			}
 			r.Cores = cp
 		}
+		if p.CoreNames != nil {
+			np := make(map[string]string, len(*p.CoreNames))
+			for id, name := range *p.CoreNames {
+				np[id] = name
+			}
+			r.CoreNames = np
+		}
 	}
 	return out
 }
@@ -241,7 +249,8 @@ func samePatchFields(a, b RecipePatch) bool {
 		(a.Achievements != nil) == (b.Achievements != nil) &&
 		(a.Mods != nil) == (b.Mods != nil) &&
 		(a.Note != nil) == (b.Note != nil) &&
-		(a.Cores != nil) == (b.Cores != nil)
+		(a.Cores != nil) == (b.Cores != nil) &&
+		(a.CoreNames != nil) == (b.CoreNames != nil)
 }
 
 // RemovePatches drops every patch targeting the named recipe.
