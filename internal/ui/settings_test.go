@@ -99,7 +99,7 @@ func TestSettingsRecipesShowPatch(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabRecipes
 	view := m.View()
-	for _, want := range []string{"mesen-nes", "patched", "overlay"} {
+	for _, want := range []string{"mesen-nes", "patched", "patches (1)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("recipes tab must show %q\n%s", want, view)
 		}
@@ -110,6 +110,93 @@ func TestSettingsRecipesShowPatch(t *testing.T) {
 	}
 	if m.baseRecipes[0].Emulator != "mesen" {
 		t.Fatalf("base must stay untouched: %+v", m.baseRecipes[0])
+	}
+}
+
+func moveTestModel(t *testing.T) (Model, string) {
+	t.Helper()
+	i18n.Set(i18n.En)
+	dir := t.TempDir()
+	recipesPath := filepath.Join(dir, "recipes.json")
+	base := []emulate.Recipe{
+		{Name: "r1", Consoles: []string{"nes"}, Emulator: "e1"},
+		{Name: "r2", Consoles: []string{"snes"}, Emulator: "e2"},
+	}
+	if err := emulate.SaveRecipes(recipesPath, base); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := emulate.Load(recipesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emu := "e1-patched"
+	patches := []emulate.RecipePatch{{Recipe: "r1", Emulator: &emu}}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes(emulate.ApplyPatches(loaded, patches)),
+		WithBaseRecipes(loaded),
+		WithPatches(patches),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s"),
+		WithLangRaw("auto"),
+	)
+	m = sizedModel(t, m)
+	m = openSettings(t, m)
+	m.settTab = TabRecipes
+	return m, recipesPath
+}
+
+func fileRecipeOrder(t *testing.T, path string) []string {
+	t.Helper()
+	loaded, err := emulate.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(loaded))
+	for i, r := range loaded {
+		names[i] = r.Name
+	}
+	return names
+}
+
+func TestSettingsRecipeMove(t *testing.T) {
+	m, recipesPath := moveTestModel(t)
+	// J moves r1 down: r2 first, cursor follows r1, patch sticks to r1.
+	out, _ := m.Update(keyMsg("J"))
+	m = out.(Model)
+	if m.baseRecipes[0].Name != "r2" || m.baseRecipes[1].Name != "r1" {
+		t.Fatalf("base order broken: %+v", m.baseRecipes)
+	}
+	if m.settCur != 1 {
+		t.Fatalf("cursor must follow moved recipe, settCur=%d", m.settCur)
+	}
+	if m.recipes[0].Name != "r2" || m.recipes[1].Emulator != "e1-patched" {
+		t.Fatalf("effective order/patch broken: %+v", m.recipes)
+	}
+	if got := fileRecipeOrder(t, recipesPath); got[0] != "r2" || got[1] != "r1" {
+		t.Fatalf("file order broken: %v", got)
+	}
+	if !strings.Contains(m.status, "r1") {
+		t.Fatalf("status must name moved recipe, got %q", m.status)
+	}
+	// J at the bottom is a no-op.
+	out, _ = m.Update(keyMsg("J"))
+	m = out.(Model)
+	if m.baseRecipes[1].Name != "r1" || m.settCur != 1 {
+		t.Fatalf("bottom J must be no-op: %+v cur=%d", m.baseRecipes, m.settCur)
+	}
+	// K moves r1 back up.
+	out, _ = m.Update(keyMsg("K"))
+	m = out.(Model)
+	if m.baseRecipes[0].Name != "r1" || m.settCur != 0 {
+		t.Fatalf("K must move up: %+v cur=%d", m.baseRecipes, m.settCur)
+	}
+	if got := fileRecipeOrder(t, recipesPath); got[0] != "r1" || got[1] != "r2" {
+		t.Fatalf("file order not restored: %v", got)
+	}
+	// K at the top is a no-op.
+	out, _ = m.Update(keyMsg("K"))
+	m = out.(Model)
+	if m.baseRecipes[0].Name != "r1" || m.settCur != 0 {
+		t.Fatalf("top K must be no-op: %+v cur=%d", m.baseRecipes, m.settCur)
 	}
 }
 

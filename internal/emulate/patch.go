@@ -189,6 +189,166 @@ func PatchesFor(patches []RecipePatch, name string) []RecipePatch {
 	return out
 }
 
+// AppliedPatches returns the subset of patches targeting a known base
+// recipe name — the ones ApplyPatches actually applies. Patches pointing
+// at unknown recipes are skipped and must not be counted.
+func AppliedPatches(base []Recipe, patches []RecipePatch) []RecipePatch {
+	known := make(map[string]bool, len(base))
+	for _, r := range base {
+		known[r.Name] = true
+	}
+	var out []RecipePatch
+	for _, p := range patches {
+		if known[p.Recipe] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// UpsertPatch inserts p into patches or replaces the last patch that
+// targets the same recipe and overrides the same fields. Fields are
+// compared by non-nil pointers: two patches conflict when they both set
+// the same field. A fully disjoint patch is appended, so several patches
+// per recipe can coexist (e.g. one for emulator, one for args).
+func UpsertPatch(patches []RecipePatch, p RecipePatch) []RecipePatch {
+	for i := range patches {
+		if patches[i].Recipe == p.Recipe && samePatchFields(patches[i], p) {
+			patches[i] = p
+			return patches
+		}
+	}
+	return append(patches, p)
+}
+
+// samePatchFields reports whether a and b override the same set of fields.
+func samePatchFields(a, b RecipePatch) bool {
+	return (a.Emulator != nil) == (b.Emulator != nil) &&
+		(a.Args != nil) == (b.Args != nil) &&
+		(a.WorkDir != nil) == (b.WorkDir != nil) &&
+		(a.Consoles != nil) == (b.Consoles != nil) &&
+		(a.Extensions != nil) == (b.Extensions != nil) &&
+		(a.Games != nil) == (b.Games != nil) &&
+		(a.Cheats != nil) == (b.Cheats != nil) &&
+		(a.Achievements != nil) == (b.Achievements != nil) &&
+		(a.Mods != nil) == (b.Mods != nil) &&
+		(a.Note != nil) == (b.Note != nil)
+}
+
+// RemovePatches drops every patch targeting the named recipe.
+func RemovePatches(patches []RecipePatch, name string) []RecipePatch {
+	out := patches[:0]
+	for _, p := range patches {
+		if p.Recipe != name {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// patchFileName sanitizes a recipe name for use as a file name inside
+// a patches directory.
+func patchFileName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteRune('-')
+		default:
+			b.WriteRune('_')
+		}
+	}
+	s := strings.Trim(b.String(), "._")
+	if s == "" {
+		s = "patch"
+	}
+	return s + ".json"
+}
+
+// StorePatch upserts one patch and persists it without touching recipes.
+// When patchesPath is a directory, the patch is stored as
+// <dir>/<recipe>.json; otherwise the whole overlay file is rewritten.
+// It returns the updated in-memory patch list.
+func StorePatch(patchesPath string, patches []RecipePatch, p RecipePatch) ([]RecipePatch, error) {
+	if strings.TrimSpace(p.Recipe) == "" {
+		return patches, fmt.Errorf("patch has no recipe target")
+	}
+	if strings.TrimSpace(patchesPath) == "" {
+		return patches, fmt.Errorf("empty patches path")
+	}
+	updated := UpsertPatch(append([]RecipePatch(nil), patches...), p)
+	if st, err := os.Stat(patchesPath); err == nil && st.IsDir() {
+		if err := os.MkdirAll(patchesPath, 0o755); err != nil {
+			return patches, err
+		}
+		file := filepath.Join(patchesPath, patchFileName(p.Recipe))
+		data, err := json.MarshalIndent(p, "", "  ")
+		if err != nil {
+			return patches, err
+		}
+		tmp := file + ".tmp"
+		if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+			return patches, err
+		}
+		if err := os.Rename(tmp, file); err != nil {
+			return patches, err
+		}
+		return updated, nil
+	}
+	if err := SavePatches(patchesPath, updated); err != nil {
+		return patches, err
+	}
+	return updated, nil
+}
+
+// DropPatches removes every patch for the named recipe and persists
+// the result. For a directory patches path each <recipe>.json file is
+// removed (both plain and {"patches":[...]} shapes); for a file path
+// the overlay is rewritten without the recipe.
+func DropPatches(patchesPath string, patches []RecipePatch, name string) ([]RecipePatch, error) {
+	updated := RemovePatches(append([]RecipePatch(nil), patches...), name)
+	if strings.TrimSpace(patchesPath) == "" {
+		return updated, nil
+	}
+	if st, err := os.Stat(patchesPath); err == nil && st.IsDir() {
+		target := filepath.Join(patchesPath, patchFileName(name))
+		_ = os.Remove(target)
+		// Also sweep files that contain the recipe inside a patches array.
+		if entries, err := os.ReadDir(patchesPath); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				fp := filepath.Join(patchesPath, e.Name())
+				ps, err := loadPatchFile(fp)
+				if err != nil || len(ps) == 0 {
+					continue
+				}
+				kept := RemovePatches(ps, name)
+				if len(kept) == len(ps) {
+					continue
+				}
+				if len(kept) == 0 {
+					_ = os.Remove(fp)
+					continue
+				}
+				data, err := json.MarshalIndent(patchFile{Patches: kept}, "", "  ")
+				if err != nil {
+					continue
+				}
+				_ = os.WriteFile(fp, append(data, '\n'), 0o644)
+			}
+		}
+		return updated, nil
+	}
+	if err := SavePatches(patchesPath, updated); err != nil {
+		return patches, err
+	}
+	return updated, nil
+}
+
 // SavePatches writes patches to path atomically without touching recipes.
 // The directory form is not writable: path must be a file path.
 func SavePatches(path string, patches []RecipePatch) error {

@@ -77,6 +77,31 @@ func TestCommandUnknownPlaceholder(t *testing.T) {
 	}
 }
 
+func TestSaveRecipesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "recipes.json")
+	want := []Recipe{
+		{Name: "r1", Consoles: []string{"nes"}, Emulator: "e1"},
+		{Name: "r2", Consoles: []string{"snes"}, Emulator: "e2"},
+	}
+	if err := SaveRecipes(p, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Name != "r1" || got[1].Name != "r2" {
+		t.Fatalf("order not preserved: %+v", got)
+	}
+	if err := SaveRecipes("", want); err == nil {
+		t.Fatalf("expected error for empty path")
+	}
+	if err := SaveRecipes(dir, want); err == nil {
+		t.Fatalf("expected error for directory path")
+	}
+}
+
 func TestLoadStrict(t *testing.T) {
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "bad.json")

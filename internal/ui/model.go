@@ -131,6 +131,13 @@ type Model struct {
 	settCur     int
 	settEditing bool
 	settBuf     []rune
+	// settPatchField selects which recipe patch field is being edited
+	// in the Recipes tab ("emulator", "args", "consoles", ...).
+	settPatchField string
+	// settField is the detail-field cursor under the selected recipe:
+	// -1 means the recipe row itself, 0..N-1 means one of the
+	// recipeFields() rows shown directly under the selected recipe.
+	settField int
 
 	cfgFile     string
 	recipesPath string
@@ -598,6 +605,23 @@ func styledRow(plain string) string {
 		return plain
 	}
 	return curStyle.Render("> ") + selStyle.Render(plain[2:])
+}
+
+// barRow marks a pre-fitted plain row with a left accent line instead of "> ".
+func barRow(plain string) string {
+	if len(plain) < 2 {
+		return plain
+	}
+	return curStyle.Render("│ ") + plain[2:]
+}
+
+// styledBarRow highlights a pre-fitted plain row and marks it with a left
+// accent line instead of "> ".
+func styledBarRow(plain string) string {
+	if len(plain) < 2 {
+		return plain
+	}
+	return curStyle.Render("│ ") + selStyle.Render(plain[2:])
 }
 
 func (m Model) renderConsoles(w int) string {

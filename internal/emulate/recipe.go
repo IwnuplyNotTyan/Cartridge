@@ -244,14 +244,57 @@ func expand(tmpl string, vars map[string]string) (string, error) {
 	return out, nil
 }
 
-func emuDir(emulator string) string {
+// LookupBinary resolves the emulator binary to a full path.
+// It reports false when the binary is not found in PATH and is not
+// an existing file (for paths containing a slash or backslash).
+func LookupBinary(emulator string) (string, bool) {
+	emulator = strings.TrimSpace(emulator)
+	if emulator == "" {
+		return "", false
+	}
 	if p, err := exec.LookPath(emulator); err == nil {
+		return p, true
+	}
+	if strings.ContainsAny(emulator, `/\`) {
+		if st, err := os.Stat(emulator); err == nil && !st.IsDir() {
+			return emulator, true
+		}
+	}
+	return "", false
+}
+
+func emuDir(emulator string) string {
+	if p, ok := LookupBinary(emulator); ok {
 		return filepath.Dir(p)
 	}
 	if dir := filepath.Dir(emulator); dir != "." && dir != "" {
 		return dir
 	}
 	return "."
+}
+
+// SaveRecipes writes base recipes to path atomically, preserving list order
+// (score ties in matching resolve to the first recipe).
+// Patches are never touched; use StorePatch/DropPatches for those.
+func SaveRecipes(path string, recipes []Recipe) error {
+	if path == "" {
+		return fmt.Errorf("empty recipes path")
+	}
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		return fmt.Errorf("recipes path is a directory: %s", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(file{Recipes: recipes}, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Example returns a commented-shape sample document (notes describe fields).

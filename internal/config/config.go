@@ -27,12 +27,12 @@ const (
 
 // File is the on-disk JSON config (~/.config/cartridge/config.json).
 type File struct {
-	RomDir  string `json:"rom_dir"`
-	Library string `json:"library"`
-	Lang    string `json:"lang"`
-	Recipes string `json:"recipes"`
-	Patches string `json:"patches,omitempty"`
-	ModsDir string `json:"mods_dir,omitempty"`
+	RomDir   string `json:"rom_dir"`
+	Library  string `json:"library"`
+	Lang     string `json:"lang"`
+	Recipes  string `json:"recipes"`
+	Patches  string `json:"patches,omitempty"`
+	ModsDir  string `json:"mods_dir,omitempty"`
 	SavesDir string `json:"saves_dir,omitempty"`
 }
 
