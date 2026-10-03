@@ -44,6 +44,7 @@ type keyMap struct {
 	Select   key.Binding
 	Rescan   key.Binding
 	Launch   key.Binding
+	Settings key.Binding
 	Help     key.Binding
 	Quit     key.Binding
 }
@@ -61,6 +62,7 @@ func newKeyMap() keyMap {
 		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", i18n.T("key.open"))),
 		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", i18n.T("key.rescan"))),
 		Launch:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", i18n.T("key.launch"))),
+		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("key.settings"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
 	}
@@ -79,7 +81,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
-		{k.PageUp, k.PageDown, k.Rescan},
+		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
 		{k.Help, k.Quit},
 	}
 }
@@ -121,6 +123,24 @@ type Model struct {
 
 	recipes []emulate.Recipe
 	play    *playtime.Store
+
+	// Settings screen state. Only the bottom bar and help survive
+	// from the browser view; tabs sit on top.
+	mode        Mode
+	settTab     SettingsTab
+	settCur     int
+	settEditing bool
+	settBuf     []rune
+
+	cfgFile     string
+	recipesPath string
+	patchesPath string
+	modsDir     string
+	savesDir    string
+	langRaw     string
+
+	baseRecipes []emulate.Recipe
+	patches     []emulate.RecipePatch
 }
 
 // launchDoneMsg reports an emulator run back to the model.
@@ -141,6 +161,32 @@ func WithRecipes(r []emulate.Recipe) Option {
 // WithPlaytime sets the play-time store.
 func WithPlaytime(s *playtime.Store) Option {
 	return func(m *Model) { m.play = s }
+}
+
+// WithBaseRecipes keeps the unpatched base recipes for the settings view.
+func WithBaseRecipes(r []emulate.Recipe) Option {
+	return func(m *Model) { m.baseRecipes = r }
+}
+
+// WithPatches sets recipe overlay patches (never rewrite the base file).
+func WithPatches(p []emulate.RecipePatch) Option {
+	return func(m *Model) { m.patches = p }
+}
+
+// WithPaths sets config file location, recipes/patches paths and data dirs.
+func WithPaths(cfgFile, recipesPath, patchesPath, modsDir, savesDir string) Option {
+	return func(m *Model) {
+		m.cfgFile = cfgFile
+		m.recipesPath = recipesPath
+		m.patchesPath = patchesPath
+		m.modsDir = modsDir
+		m.savesDir = savesDir
+	}
+}
+
+// WithLangRaw remembers the raw language value from config ("auto"/"en"/"ru").
+func WithLangRaw(raw string) Option {
+	return func(m *Model) { m.langRaw = raw }
 }
 
 // New builds the model from an initial scan.
@@ -164,6 +210,12 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 	m.help.Styles.Ellipsis = lipglossv2.NewStyle().Foreground(lipglossv2.Color(charmtone.Iron.Hex()))
 	for _, opt := range opts {
 		opt(&m)
+	}
+	if len(m.baseRecipes) == 0 && len(m.recipes) > 0 {
+		m.baseRecipes = append([]emulate.Recipe(nil), m.recipes...)
+	}
+	if m.langRaw == "" {
+		m.langRaw = "auto"
 	}
 	m.setGames(games)
 	return m
@@ -300,6 +352,9 @@ func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := m.keys
+	if m.mode == ModeSettings {
+		return m.updateSettings(msg)
+	}
 	switch {
 	case key.Matches(msg, k.Quit):
 		return m, tea.Quit
@@ -310,6 +365,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, k.Launch):
 		return m.launchSelected()
+	case key.Matches(msg, k.Settings):
+		m.openSettings()
+		return m, nil
 	}
 	if m.showHelp && msg.String() == "esc" {
 		m.showHelp = false
@@ -487,16 +545,23 @@ func (m Model) layout() (cw, gw, mw int) {
 }
 
 // View implements tea.Model.
+// In settings mode only the bottom bar and help survive from the browser;
+// tabs sit on top of the settings body.
 func (m Model) View() string {
 	if !m.ready {
 		return i18n.T("ui.waiting")
 	}
-	cw, gw, mw := m.layout()
-	left := m.renderConsoles(cw)
-	mid := m.renderGames(gw)
-	right := m.renderMetaPane(mw)
-	sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+	var body string
+	if m.mode == ModeSettings {
+		body = m.renderSettings()
+	} else {
+		cw, gw, mw := m.layout()
+		left := m.renderConsoles(cw)
+		mid := m.renderGames(gw)
+		right := m.renderMetaPane(mw)
+		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, sep, mid, sep, right)
+	}
 	var content string
 	if m.showHelp {
 		content = lipgloss.JoinVertical(lipgloss.Left,
