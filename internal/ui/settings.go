@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -117,6 +118,7 @@ func recipeFields() []recipeField {
 	return []recipeField{
 		{"emulator", "sett.recipes.emulator"},
 		{"args", "sett.recipes.args"},
+		{"cores", "sett.recipes.cores"},
 		{"consoles", "sett.recipes.consoles"},
 		{"extensions", "sett.recipes.extensions"},
 		{"games", "sett.recipes.games"},
@@ -272,6 +274,9 @@ func (m *Model) saveRecipeEdit() {
 	case "args":
 		args := splitArgs(v)
 		p.Args = &args
+	case "cores":
+		cs := parseCores(v)
+		p.Cores = &cs
 	case "consoles":
 		vs := splitList(v)
 		p.Consoles = &vs
@@ -342,6 +347,8 @@ func fieldBuffer(field string, eff emulate.Recipe) string {
 	switch field {
 	case "args":
 		return joinArgs(eff.Args)
+	case "cores":
+		return joinCores(eff.Cores)
 	case "consoles":
 		return strings.Join(eff.Consoles, ", ")
 	case "extensions":
@@ -403,6 +410,50 @@ func splitList(s string) []string {
 	}
 	if out == nil {
 		return []string{}
+	}
+	return out
+}
+
+// joinCores renders a console→cores map as one editable line:
+// "nes: a.so, b.so; snes: c.so". Consoles sort for a stable view.
+func joinCores(cores map[string][]string) string {
+	if len(cores) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(cores))
+	for id := range cores {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, id+": "+strings.Join(cores[id], ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// parseCores parses a "nes: a.so, b.so; snes: c.so" line back into
+// a console→cores map. Console ids lowercase; empty items drop out.
+func parseCores(s string) map[string][]string {
+	out := map[string][]string{}
+	for _, group := range strings.Split(s, ";") {
+		id, list, ok := strings.Cut(group, ":")
+		if !ok {
+			continue
+		}
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" {
+			continue
+		}
+		var cores []string
+		for _, c := range strings.Split(list, ",") {
+			if v := strings.TrimSpace(c); v != "" {
+				cores = append(cores, v)
+			}
+		}
+		if len(cores) > 0 {
+			out[id] = cores
+		}
 	}
 	return out
 }
@@ -885,8 +936,7 @@ func (m Model) renderRecipesTab(w int) []string {
 		for fi, f := range fields {
 			label := i18n.T(f.label)
 			if m.settEditing && m.settPatchField == f.name {
-				edit := label + ": " + string(m.settBuf) + "▊"
-				lines = append(lines, styledBarRow(fit("    "+truncate(edit, w-4), w)))
+				lines = append(lines, styledBarRow(editLine("    ", label, string(m.settBuf), w)))
 				continue
 			}
 			val := fieldDisplay(f.name, r, eff)
@@ -919,6 +969,8 @@ func fieldDisplay(name string, base, eff emulate.Recipe) string {
 		}
 	case "args":
 		val = joinArgs(eff.Args)
+	case "cores":
+		val = joinCores(eff.Cores)
 	case "consoles":
 		val = strings.Join(eff.Consoles, ", ")
 	case "extensions":
@@ -972,10 +1024,7 @@ func (m Model) renderPathsTab(w int) []string {
 		label := i18n.T(e.label)
 		val := e.get(&m)
 		if m.settEditing && i == m.settCur {
-			val = string(m.settBuf) + "▊"
-			row := label + ": " + val
-			plain := fit("  "+truncate(row, w-2), w)
-			lines = append(lines, styledRow(plain))
+			lines = append(lines, styledRow(editLine("  ", label, string(m.settBuf), w)))
 			continue
 		}
 		row := label + ": " + val

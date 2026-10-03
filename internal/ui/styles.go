@@ -115,6 +115,44 @@ func fit(s string, w int) string {
 	return t
 }
 
+// truncateLeft cuts s to at most n cells from the left, adding … on
+// overflow, so the tail stays visible. Width-aware like truncate.
+func truncateLeft(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= n {
+		return s
+	}
+	if n == 1 {
+		return "…"
+	}
+	rs := []rune(s)
+	w := 0
+	i := len(rs)
+	for i > 0 {
+		rw := lipgloss.Width(string(rs[i-1]))
+		if w+rw > n-1 {
+			break
+		}
+		w += rw
+		i--
+	}
+	return "…" + string(rs[i:])
+}
+
+// editLine renders one inline-edit row "indent + label: buf▊" fitted to
+// exactly w cells. The label is never cut; when the buffer overflows,
+// its head scrolls away so the cursor at the end stays on screen.
+func editLine(indent, label, buf string, w int) string {
+	prefix := indent + label + ": "
+	budget := w - lipgloss.Width(prefix) - 1 // 1 cell for ▊
+	if budget < 1 {
+		budget = 1
+	}
+	return fit(prefix+truncateLeft(buf, budget)+"▊", w)
+}
+
 // wrapSoft word-wraps s into lines of at most w cells.
 // Words longer than w are split only as a last resort, so unlike a hard
 // rune-count cut no text is ever replaced by "…" and lost.

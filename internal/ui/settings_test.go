@@ -200,6 +200,53 @@ func TestSettingsRecipeMove(t *testing.T) {
 	}
 }
 
+func TestCoresParseJoinRoundTrip(t *testing.T) {
+	in := "gba: mgba_libretro.so; nes: nestopia_libretro.so, mesen_libretro.so"
+	m := parseCores(in)
+	if len(m) != 2 || len(m["nes"]) != 2 || m["nes"][0] != "nestopia_libretro.so" {
+		t.Fatalf("parse broken: %+v", m)
+	}
+	if got := joinCores(m); got != in {
+		t.Fatalf("join = %q, want %q", got, in)
+	}
+	m = parseCores("nes: a.so, , ; junk-without-colon; : x.so; snes:  ")
+	if len(m) != 1 || len(m["nes"]) != 1 || m["nes"][0] != "a.so" {
+		t.Fatalf("garbage must drop out: %+v", m)
+	}
+	if m := parseCores("  "); len(m) != 0 || joinCores(m) != "" {
+		t.Fatalf("empty must stay empty: %+v", m)
+	}
+}
+
+func TestSettingsCoresEditSavesPatch(t *testing.T) {
+	m, _ := moveTestModel(t)
+	m.settCur = 0 // r1
+	m.startRecipeEdit("cores")
+	if !m.settEditing || m.settPatchField != "cores" {
+		t.Fatalf("cores edit not started: editing=%v field=%q", m.settEditing, m.settPatchField)
+	}
+	m.settBuf = []rune("nes: nestopia_libretro.so, mesen_libretro.so")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if m.settEditing {
+		t.Fatalf("still editing: %q", m.status)
+	}
+	got := m.recipes[0].Cores["nes"]
+	if len(got) != 2 || got[0] != "nestopia_libretro.so" {
+		t.Fatalf("effective cores broken: %+v", m.recipes[0].Cores)
+	}
+	if view := m.View(); !strings.Contains(view, "cores:") || !strings.Contains(view, "nestopia_libretro.so") {
+		t.Fatalf("cores row must show\n%s", view)
+	}
+	data, err := os.ReadFile(m.patchesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"cores"`) {
+		t.Fatalf("patches file must carry cores: %s", data)
+	}
+}
+
 func TestSettingsLanguageApplies(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabLang

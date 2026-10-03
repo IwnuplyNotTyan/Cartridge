@@ -16,21 +16,24 @@ func nesGame() rom.Game {
 	}
 }
 
-func TestMatchPrecedence(t *testing.T) {
+func TestMatchHierarchy(t *testing.T) {
 	byExt := Recipe{Name: "by-ext", Extensions: []string{"nes"}, Emulator: "e1"}
 	byConsole := Recipe{Name: "by-console", Consoles: []string{"nes"}, Emulator: "e2"}
 	byGame := Recipe{Name: "by-game", Games: []string{"aaa111bbb222"}, Emulator: "e3"}
 	def := Recipe{Name: "default", Emulator: "e0"}
 
-	if got := Match([]Recipe{byExt, byConsole, byGame, def}, nesGame()); got.Name != "by-game" {
-		t.Fatalf("game must win, got %v", got)
+	// List order beats scope weight: the first match from the top wins.
+	if got := Match([]Recipe{byExt, byConsole, byGame, def}, nesGame()); got.Name != "by-ext" {
+		t.Fatalf("top recipe must win, got %v", got)
 	}
-	if got := Match([]Recipe{byExt, byConsole, def}, nesGame()); got.Name != "by-console" {
-		t.Fatalf("console must beat ext, got %v", got)
+	if got := Match([]Recipe{byGame, byConsole, byExt}, nesGame()); got.Name != "by-game" {
+		t.Fatalf("top recipe must win, got %v", got)
 	}
-	if got := Match([]Recipe{byExt, def}, nesGame()); got.Name != "by-ext" {
-		t.Fatalf("ext must beat default, got %v", got)
+	// A scopeless recipe matches everything, so on top it shadows all.
+	if got := Match([]Recipe{def, byGame}, nesGame()); got.Name != "default" {
+		t.Fatalf("top default must win, got %v", got)
 	}
+	// Default placed last still works as a fallback.
 	other := nesGame()
 	other.ConsoleID = "snes"
 	other.Path = "/x/b.sfc"
@@ -124,6 +127,76 @@ func TestLoadStrict(t *testing.T) {
 	}
 }
 
+func TestCoreFor(t *testing.T) {
+	r := Recipe{Name: "ra", Cores: map[string][]string{
+		"nes":  {"nestopia_libretro.so", "mesen_libretro.so"},
+		"snes": {""},
+	}}
+	if got, err := r.CoreFor("nes"); err != nil || got != "nestopia_libretro.so" {
+		t.Fatalf("CoreFor(nes) = %q, %v", got, err)
+	}
+	if got, err := r.CoreFor("NES"); err != nil || got != "nestopia_libretro.so" {
+		t.Fatalf("CoreFor must ignore case: %q, %v", got, err)
+	}
+	if _, err := r.CoreFor("gba"); err == nil {
+		t.Fatalf("CoreFor(gba) must fail")
+	}
+	if _, err := r.CoreFor("snes"); err == nil {
+		t.Fatalf("CoreFor(snes) must fail on empty list")
+	}
+}
+
+func TestCommandCorePlaceholder(t *testing.T) {
+	r := Recipe{Name: "ra", Emulator: "retroarch",
+		Args:  []string{"-L", "{core}", "{rom}"},
+		Cores: map[string][]string{"nes": {"nestopia_libretro.so", "mesen_libretro.so"}}}
+	cmd, err := r.Command(nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"retroarch", "-L", "nestopia_libretro.so", "/x/battle.nes"}
+	for i := range want {
+		if cmd.Args[i] != want[i] {
+			t.Fatalf("args = %q, want %q", cmd.Args, want)
+		}
+	}
+	// Console without a core fails loudly instead of launching bare.
+	gba := nesGame()
+	gba.ConsoleID = "gba"
+	if _, err := r.Command(gba); err == nil {
+		t.Fatalf("Command must fail without a core for gba")
+	}
+	// {core} without any Cores map stays an unknown placeholder.
+	plain := Recipe{Name: "plain", Emulator: "retroarch", Args: []string{"-L", "{core}", "{rom}"}}
+	if _, err := plain.Command(nesGame()); err == nil {
+		t.Fatalf("Command must fail on {core} without cores")
+	}
+}
+
+func TestPatchCoresApply(t *testing.T) {
+	base := []Recipe{{Name: "ra", Emulator: "retroarch",
+		Args:  []string{"-L", "{core}", "{rom}"},
+		Cores: map[string][]string{"nes": {"a.so"}}}}
+	cores := map[string][]string{"nes": {"b.so", "c.so"}, "snes": {"d.so"}}
+	patched := ApplyPatches(base, []RecipePatch{{Recipe: "ra", Cores: &cores}})
+	if got := patched[0].Cores["nes"]; len(got) != 2 || got[0] != "b.so" {
+		t.Fatalf("cores patch broken: %+v", patched[0].Cores)
+	}
+	if got := patched[0].Cores["snes"]; len(got) != 1 {
+		t.Fatalf("cores patch broken: %+v", patched[0].Cores)
+	}
+	if len(base[0].Cores["nes"]) != 1 || base[0].Cores["nes"][0] != "a.so" {
+		t.Fatalf("base must stay untouched: %+v", base[0].Cores)
+	}
+	cmd, err := patched[0].Command(nesGame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Args[2] != "b.so" {
+		t.Fatalf("patched core not used: %q", cmd.Args)
+	}
+}
+
 func TestExampleParses(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "recipes.json")
@@ -134,7 +207,7 @@ func TestExampleParses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("example must load: %v", err)
 	}
-	if len(rs) != 2 {
+	if len(rs) != 3 {
 		t.Fatalf("example has %d recipes", len(rs))
 	}
 }

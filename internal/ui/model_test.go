@@ -263,3 +263,64 @@ func TestWrapSoftNoLoss(t *testing.T) {
 		t.Fatalf("wrap lost text: got %q want %q", got.String(), src)
 	}
 }
+
+func TestTruncateLeftKeepsTail(t *testing.T) {
+	if got := truncateLeft("abcdef", 10); got != "abcdef" {
+		t.Fatalf("short text must pass through: %q", got)
+	}
+	got := truncateLeft("abcdefghij", 5)
+	if !strings.HasSuffix(got, "ghij") || !strings.HasPrefix(got, "…") {
+		t.Fatalf("tail must survive: %q", got)
+	}
+	if w := lipgloss.Width(got); w != 5 {
+		t.Fatalf("width = %d, want 5: %q", w, got)
+	}
+	if got := truncateLeft("abcdefghij", 1); got != "…" {
+		t.Fatalf("n=1 must be ellipsis: %q", got)
+	}
+}
+
+func TestEditLineKeepsCursorVisible(t *testing.T) {
+	long := strings.Repeat("ab", 60) // 120 cells of buffer
+	line := editLine("    ", "cores", long, 40)
+	plain := stripANSI(line)
+	if lipgloss.Width(plain) != 40 {
+		t.Fatalf("width = %d, want 40: %q", lipgloss.Width(plain), plain)
+	}
+	if !strings.HasPrefix(plain, "    cores: ") {
+		t.Fatalf("label must stay: %q", plain)
+	}
+	if !strings.HasSuffix(plain, "▊") {
+		t.Fatalf("cursor must stay on screen: %q", plain)
+	}
+	if !strings.Contains(plain, "…") {
+		t.Fatalf("overflow must mark the cut head: %q", plain)
+	}
+	// The visible tail must be the buffer end, not its head.
+	tail := strings.TrimSuffix(strings.TrimPrefix(plain, "    cores: …"), "▊")
+	if !strings.HasSuffix(long, tail) {
+		t.Fatalf("tail %q is not the buffer end", tail)
+	}
+	// Short buffers render in full.
+	line = editLine("  ", "Games", "/new/games", 40)
+	if plain := stripANSI(line); !strings.Contains(plain, "/new/games▊") {
+		t.Fatalf("short buffer must show fully: %q", plain)
+	}
+}
+
+// stripANSI drops escape sequences for plain-text assertions.
+func stripANSI(s string) string {
+	var b strings.Builder
+	esc := false
+	for _, r := range s {
+		switch {
+		case r == 0x1b:
+			esc = true
+		case esc && (r == 'm' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'):
+			esc = false
+		case !esc:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

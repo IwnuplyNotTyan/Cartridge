@@ -5,7 +5,9 @@
 // support) shown in the UI. Recipes live in a JSON file, e.g.
 // ~/.config/cartridge/recipes.json; run with --recipe-example for a sample.
 //
-// Matching precedence: exact game > console > extension > scopeless default.
+// Matching follows the list hierarchy: the first recipe from the top whose
+// scope matches the game wins. A scopeless recipe matches everything, so
+// defaults go last (move recipes with J/K in the settings tab).
 package emulate
 
 import (
@@ -32,6 +34,7 @@ const (
 	phConsole = "console" // console id (nes, gba, …)
 	phExt     = "ext"     // ROM extension with dot (.nes)
 	phEmuDir  = "emu_dir" // emulator binary directory
+	phCore    = "core"    // selected core for the game console (see Cores)
 )
 
 // Cheats describes cheat-file support (path is a placeholder template).
@@ -65,6 +68,29 @@ type Recipe struct {
 	Achievements Achievements `json:"achievements,omitempty"`
 	Mods         Mods         `json:"mods,omitempty"`
 	Note         string       `json:"note,omitempty"`
+	// Cores maps a console id to its core paths (libretro .so files, …).
+	// The first entry is the default and expands as {core} in args,
+	// workdir and feature paths. Needed by multi-system frontends
+	// like RetroArch where each console needs its own core.
+	Cores map[string][]string `json:"cores,omitempty"`
+}
+
+// CoreFor returns the default core for a console (the first listed).
+// Lookup is case-insensitive; an error means the recipe covers no core
+// for this console.
+func (r Recipe) CoreFor(console string) (string, error) {
+	for id, cores := range r.Cores {
+		if !strings.EqualFold(id, console) {
+			continue
+		}
+		for _, c := range cores {
+			if strings.TrimSpace(c) != "" {
+				return c, nil
+			}
+		}
+		return "", fmt.Errorf("recipe %q has no cores for console %q", r.Name, console)
+	}
+	return "", fmt.Errorf("recipe %q has no cores for console %q", r.Name, console)
 }
 
 // file is the on-disk recipes document.
@@ -103,51 +129,34 @@ func Load(path string) ([]Recipe, error) {
 	return f.Recipes, nil
 }
 
-// Match picks the best recipe for g: exact game ID/ShortID (+100),
-// console (+10), extension (+1); a scopeless recipe is the default.
-// Ties resolve to the first recipe. Returns nil when nothing applies.
+// Match picks the recipe for g by list hierarchy: the first recipe from
+// the top whose scope (game ID/ShortID, console or extension) matches wins.
+// A scopeless recipe matches everything, so defaults go last.
+// Returns nil when nothing applies.
 func Match(recipes []Recipe, g rom.Game) *Recipe {
-	var (
-		best      *Recipe
-		bestScore int
-		def       *Recipe
-	)
 	ext := gameExt(g)
 	for i := range recipes {
 		r := &recipes[i]
 		if len(r.Games) == 0 && len(r.Consoles) == 0 && len(r.Extensions) == 0 {
-			if def == nil {
-				def = r
-			}
-			continue
+			return r
 		}
-		score := 0
 		for _, id := range r.Games {
 			if id == g.ID || id == g.ShortID() {
-				score += 100
-				break
+				return r
 			}
 		}
 		for _, c := range r.Consoles {
 			if strings.EqualFold(c, g.ConsoleID) {
-				score += 10
-				break
+				return r
 			}
 		}
 		for _, e := range r.Extensions {
 			if normExt(e) == ext {
-				score++
-				break
+				return r
 			}
 		}
-		if score > 0 && (best == nil || score > bestScore) {
-			best, bestScore = r, score
-		}
 	}
-	if best != nil {
-		return best
-	}
-	return def
+	return nil
 }
 
 // Command builds the emulator process for g, expanding placeholders.
@@ -166,6 +175,13 @@ func (r Recipe) Command(g rom.Game) (*exec.Cmd, error) {
 		phConsole: g.ConsoleID,
 		phExt:     gameExt(g),
 		phEmuDir:  emuDir(r.Emulator),
+	}
+	if len(r.Cores) > 0 {
+		core, err := r.CoreFor(g.ConsoleID)
+		if err != nil {
+			return nil, err
+		}
+		vars[phCore] = core
 	}
 	args := make([]string, len(r.Args))
 	for i, a := range r.Args {
@@ -198,6 +214,13 @@ func (r Recipe) Expand(tmpl string, g rom.Game) (string, error) {
 		phConsole: g.ConsoleID,
 		phExt:     gameExt(g),
 		phEmuDir:  emuDir(r.Emulator),
+	}
+	if len(r.Cores) > 0 {
+		core, err := r.CoreFor(g.ConsoleID)
+		if err != nil {
+			return "", err
+		}
+		vars[phCore] = core
 	}
 	return expand(tmpl, vars)
 }
@@ -318,6 +341,27 @@ func Example() []Recipe {
 			Cheats:       Cheats{Supported: true, Path: "{emu_dir}/cheats/{shortid}.cht"},
 			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
 			Mods:         Mods{Supported: true, Path: "{dir}/mods/{title}"},
+		},
+		{
+			// Multi-system frontend: one core per console, several where
+			// there is a choice (the first listed is the default {core}).
+			Name:     "retroarch-cores",
+			Consoles: []string{"nes", "snes", "gb", "gbc", "gba", "genesis", "gamegear", "n64"},
+			Emulator: "retroarch",
+			Args:     []string{"-L", "{core}", "{rom}"},
+			Cores: map[string][]string{
+				"nes":      {"nestopia_libretro.so", "mesen_libretro.so"},
+				"snes":     {"snes9x_libretro.so"},
+				"gb":       {"gambatte_libretro.so", "sameboy_libretro.so"},
+				"gbc":      {"gambatte_libretro.so", "sameboy_libretro.so"},
+				"gba":      {"mgba_libretro.so"},
+				"genesis":  {"genesis_plus_gx_libretro.so"},
+				"gamegear": {"genesis_plus_gx_libretro.so"},
+				"n64":      {"mupen64plus_next_libretro.so", "parallel_n64_libretro.so"},
+			},
+			Cheats:       Cheats{Supported: true, Path: "{emu_dir}/cheats/{shortid}.cht"},
+			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
+			Note:         "multi-system frontend, per-console cores",
 		},
 	}
 }

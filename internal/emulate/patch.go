@@ -13,17 +13,18 @@ import (
 // Only non-nil fields are applied; the base recipes file is never rewritten.
 // This guarantees patches never replace a recipe, they only overlay it.
 type RecipePatch struct {
-	Recipe       string        `json:"recipe"`
-	Emulator     *string       `json:"emulator,omitempty"`
-	Args         *[]string     `json:"args,omitempty"`
-	WorkDir      *string       `json:"workdir,omitempty"`
-	Consoles     *[]string     `json:"consoles,omitempty"`
-	Extensions   *[]string     `json:"extensions,omitempty"`
-	Games        *[]string     `json:"games,omitempty"`
-	Cheats       *Cheats       `json:"cheats,omitempty"`
-	Achievements *Achievements `json:"achievements,omitempty"`
-	Mods         *Mods         `json:"mods,omitempty"`
-	Note         *string       `json:"note,omitempty"`
+	Recipe       string               `json:"recipe"`
+	Emulator     *string              `json:"emulator,omitempty"`
+	Args         *[]string            `json:"args,omitempty"`
+	WorkDir      *string              `json:"workdir,omitempty"`
+	Consoles     *[]string            `json:"consoles,omitempty"`
+	Extensions   *[]string            `json:"extensions,omitempty"`
+	Games        *[]string            `json:"games,omitempty"`
+	Cheats       *Cheats              `json:"cheats,omitempty"`
+	Achievements *Achievements        `json:"achievements,omitempty"`
+	Mods         *Mods                `json:"mods,omitempty"`
+	Note         *string              `json:"note,omitempty"`
+	Cores        *map[string][]string `json:"cores,omitempty"`
 }
 
 type patchFile struct {
@@ -160,6 +161,13 @@ func ApplyPatches(base []Recipe, patches []RecipePatch) []Recipe {
 		if p.Note != nil {
 			r.Note = *p.Note
 		}
+		if p.Cores != nil {
+			cp := make(map[string][]string, len(*p.Cores))
+			for id, cores := range *p.Cores {
+				cp[id] = append([]string(nil), cores...)
+			}
+			r.Cores = cp
+		}
 	}
 	return out
 }
@@ -232,7 +240,8 @@ func samePatchFields(a, b RecipePatch) bool {
 		(a.Cheats != nil) == (b.Cheats != nil) &&
 		(a.Achievements != nil) == (b.Achievements != nil) &&
 		(a.Mods != nil) == (b.Mods != nil) &&
-		(a.Note != nil) == (b.Note != nil)
+		(a.Note != nil) == (b.Note != nil) &&
+		(a.Cores != nil) == (b.Cores != nil)
 }
 
 // RemovePatches drops every patch targeting the named recipe.
