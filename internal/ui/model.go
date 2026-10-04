@@ -1804,7 +1804,6 @@ func (m Model) buildMetaRows() []metaRow {
 			rows = append(rows, metaRow{kind: "core", label: i18n.T("meta.core"), lines: wrapSoft(cval, vw), copy: core})
 		}
 		rows = append(rows, m.cheatsRows(*g, *r, vw)...)
-		rows = append(rows, kv(i18n.T("meta.achievements"), featText(r.Achievements.Supported, r.Achievements.Note, *g, r)))
 		rows = append(rows, m.modsRows(*g, *r, vw)...)
 	} else {
 		rows = append(rows, metaRow{kind: "kv", label: i18n.T("meta.recipe"), lines: wrapSoft(i18n.T("recipe.none"), vw)})
@@ -1821,18 +1820,16 @@ func (m Model) buildMetaRows() []metaRow {
 	return rows
 }
 
-// cheatsRows builds the cheats summary row (with no-file or bad-file mark)
+// cheatsRows builds the cheats summary row (with a bad-file mark)
 // plus one row per cheat while the list is expanded. Every listed cheat
-// is available at once; there are no per-cheat choices.
+// is available at once; there are no per-cheat choices. When no cheat
+// file is detected the section is hidden entirely.
 func (m Model) cheatsRows(g rom.Game, r emulate.Recipe, vw int) []metaRow {
-	base := featText(r.Cheats.Supported, r.Cheats.Path, g, &r)
-	if !r.Cheats.Supported {
-		return []metaRow{{kind: "cheats", label: i18n.T("meta.cheats"), lines: wrapSoft(base, vw), copy: base}}
+	if !r.Cheats.Supported || m.cheatMissing || m.cheatPath == "" {
+		return nil
 	}
-	switch {
-	case m.cheatMissing:
-		base += " (" + i18n.T("meta.cheats.nofile") + ")"
-	case m.cheatFile == nil:
+	base := featText(r.Cheats.Supported, r.Cheats.Path, g, &r)
+	if m.cheatFile == nil {
 		base += " (" + i18n.T("meta.cheats.bad") + ")"
 	}
 	rows := []metaRow{{kind: "cheats", label: i18n.T("meta.cheats"), lines: wrapSoft(base, vw), copy: base}}
@@ -2048,16 +2045,13 @@ func modCandidates(g rom.Game) []string {
 // expanded. Each file shows its pile name and the exact deployed name
 // RetroArch autopatches by (game stem + ext), plus an [active] mark when
 // those bytes already sit beside the ROM. Enter deploys, d removes.
+// When no mod files are found the section is hidden entirely.
 func (m Model) modsRows(g rom.Game, r emulate.Recipe, vw int) []metaRow {
+	if !r.Mods.Supported || len(m.modFiles) == 0 {
+		return nil
+	}
 	base := featText(r.Mods.Supported, r.Mods.Path, g, &r)
-	if !r.Mods.Supported {
-		return []metaRow{{kind: "mods", label: i18n.T("meta.mods"), lines: wrapSoft(base, vw), copy: base}}
-	}
-	if len(m.modFiles) == 0 {
-		base += " (" + i18n.T("meta.mods.nofile") + ")"
-	} else {
-		base += fmt.Sprintf(" (%d)", len(m.modFiles))
-	}
+	base += fmt.Sprintf(" (%d)", len(m.modFiles))
 	rows := []metaRow{{kind: "mods", label: i18n.T("meta.mods"), lines: wrapSoft(base, vw), copy: base}}
 	if m.modsOpen {
 		for i, f := range m.modFiles {

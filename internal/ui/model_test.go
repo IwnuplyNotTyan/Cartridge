@@ -239,7 +239,7 @@ func TestLaunchRecordsPlaytime(t *testing.T) {
 		t.Fatalf("playtime = %+v ok=%v", st, ok)
 	}
 	view := m.View()
-	for _, want := range []string{"test-nes", "played", "1 min 30 s", "cheats"} {
+	for _, want := range []string{"test-nes", "played", "1 min 30 s"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q\n%s", want, view)
 		}
@@ -683,25 +683,11 @@ func TestMetaMaterializeFromPile(t *testing.T) {
 	dir := t.TempDir()
 	live := filepath.Join(dir, "live", "game.cht")
 	m := pileLiveTestModel(t, live, dir, testCHT)
-	m = metaCursorTo(t, m, "cheats")
-	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
-		t.Fatalf("missing live file must show, got %q", got)
-	}
-	// Expanding copies the pile match into place, all enabled.
-	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = out.(Model)
-	data, err := os.ReadFile(live)
-	if err != nil {
-		t.Fatalf("live file must be created: %v", err)
-	}
-	if !strings.Contains(string(data), "Infinite Lives") {
-		t.Fatalf("pile content must land:\n%s", data)
-	}
-	if got := strings.Count(string(data), "_enable = true"); got != 2 {
-		t.Fatalf("copy must save all enabled:\n%s", data)
-	}
-	if view := m.View(); !strings.Contains(view, "Infinite Lives") {
-		t.Fatalf("copied cheats must show\n%s", view)
+	// Missing live file hides the section entirely now.
+	for _, r := range m.metaRows {
+		if !r.sep && (r.kind == "cheats" || r.kind == "cheat") {
+			t.Fatalf("missing live file must hide cheats, got %+v", r)
+		}
 	}
 }
 
@@ -709,16 +695,11 @@ func TestMetaMaterializeSkeleton(t *testing.T) {
 	dir := t.TempDir()
 	live := filepath.Join(dir, "live", "game.cht")
 	m := pileLiveTestModel(t, live, dir, "cheats = 0\n")
-	// Pile parses to nothing: expanding creates an empty skeleton instead.
-	m = metaCursorTo(t, m, "cheats")
-	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = out.(Model)
-	data, err := os.ReadFile(live)
-	if err != nil {
-		t.Fatalf("skeleton must be created: %v", err)
-	}
-	if !strings.Contains(string(data), "cheats = 0") {
-		t.Fatalf("skeleton must be empty:\n%s", data)
+	// Missing live file hides the section entirely now.
+	for _, r := range m.metaRows {
+		if !r.sep && (r.kind == "cheats" || r.kind == "cheat") {
+			t.Fatalf("missing live file must hide cheats, got %+v", r)
+		}
 	}
 }
 
@@ -744,22 +725,11 @@ func TestMetaCheatsEscCollapse(t *testing.T) {
 func TestMetaCheatsNoFile(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.cht")
 	m := cheatTestModel(t, missing)
-	m = metaCursorTo(t, m, "cheats")
-	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
-		t.Fatalf("missing file must show, got %q", got)
-	}
-	// Enter materializes an empty skeleton and opens it.
-	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = out.(Model)
-	if !m.cheatsOpen {
-		t.Fatalf("expand must open the skeleton")
-	}
-	data, err := os.ReadFile(missing)
-	if err != nil {
-		t.Fatalf("skeleton must be created: %v", err)
-	}
-	if !strings.Contains(string(data), "cheats = 0") {
-		t.Fatalf("skeleton must be empty:\n%s", data)
+	// Missing file hides the section entirely now.
+	for _, r := range m.metaRows {
+		if !r.sep && (r.kind == "cheats" || r.kind == "cheat") {
+			t.Fatalf("missing file must hide cheats, got %+v", r)
+		}
 	}
 }
 
@@ -885,9 +855,11 @@ func TestMetaCheatsTemplateWins(t *testing.T) {
 
 func TestMetaCheatsPileMissShowsNoFile(t *testing.T) {
 	m := pileTestModel(t, t.TempDir(), filepath.Join(t.TempDir(), "overrides.json"))
-	m = metaCursorTo(t, m, "cheats")
-	if got := metaRowText(t, m, "cheats"); !strings.Contains(got, "(no file)") {
-		t.Fatalf("pile miss must show no file, not bad file, got %q", got)
+	// Pile miss hides the section entirely now, not bad file.
+	for _, r := range m.metaRows {
+		if !r.sep && (r.kind == "cheats" || r.kind == "cheat") {
+			t.Fatalf("pile miss must hide cheats, got %+v", r)
+		}
 	}
 }
 
@@ -1315,9 +1287,10 @@ func TestMetaModsOKNoBadge(t *testing.T) {
 
 func TestMetaModsNoFile(t *testing.T) {
 	m := modTestModel(t, t.TempDir())
-	m = metaCursorTo(t, m, "mods")
-	if got := metaRowText(t, m, "mods"); !strings.Contains(got, "(no file)") {
-		t.Fatalf("empty pile must show no file, got %q", got)
+	for _, r := range m.metaRows {
+		if !r.sep && (r.kind == "mods" || r.kind == "mod") {
+			t.Fatalf("empty pile must hide mods, got %+v", r)
+		}
 	}
 }
 

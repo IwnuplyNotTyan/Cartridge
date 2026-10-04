@@ -334,8 +334,22 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 	i18n.Set(i18n.En)
 	dir := t.TempDir()
 	recipesPath := filepath.Join(dir, "recipes.json")
+	baseEmu := filepath.Join(dir, "base", "emu")
+	patchedEmu := filepath.Join(dir, "patched", "emu")
+	for _, emu := range []string{baseEmu, patchedEmu} {
+		if err := os.MkdirAll(filepath.Dir(emu), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(emu, []byte("emu"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Cheat files must exist, otherwise the meta section hides.
+		if err := os.WriteFile(filepath.Join(filepath.Dir(emu), "c.cht"), []byte("cheats = 0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	base := []emulate.Recipe{{
-		Name: "r1", Consoles: []string{"nes"}, Emulator: "/base/emu",
+		Name: "r1", Consoles: []string{"nes"}, Emulator: baseEmu,
 		Cheats: emulate.Cheats{Supported: true, Path: "{emu_dir}/c.cht"},
 	}}
 	if err := emulate.SaveRecipes(recipesPath, base); err != nil {
@@ -345,7 +359,7 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	emu := "/patched/emu"
+	emu := patchedEmu
 	patches := []emulate.RecipePatch{{Recipe: "r1", Emulator: &emu}}
 	m := New(sampleGames(), "/x", "/tmp/lib.json",
 		WithRecipes(emulate.ApplyPatches(loaded, patches)),
@@ -358,11 +372,11 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 	m = openSettings(t, m)
 	m.settTab = TabRecipes
 	m.settCur = 0
-	if got := metaCheatsValue(t, m); !strings.Contains(got, "/patched/c.cht") {
+	if got := metaCheatsValue(t, m); !strings.Contains(got, "patched") {
 		t.Fatalf("precondition: cheats = %q", got)
 	}
 	m.dropRecipePatch()
-	if got := metaCheatsValue(t, m); !strings.Contains(got, "/base/c.cht") {
+	if got := metaCheatsValue(t, m); !strings.Contains(got, "base") || strings.Contains(got, "patched") {
 		t.Fatalf("meta must follow dropped patch, got %q", got)
 	}
 }
