@@ -55,6 +55,7 @@ type keyMap struct {
 	Settings key.Binding
 	Copy     key.Binding
 	Deploy   key.Binding
+	Search   key.Binding
 	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
@@ -71,6 +72,7 @@ func newKeyMap() keyMap {
 		PageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", i18n.T("key.page_up"))),
 		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", i18n.T("key.page_down"))),
 		Select:   key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", i18n.T("key.open"))),
+		Search:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", i18n.T("key.search"))),
 		Rescan:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", i18n.T("key.rescan"))),
 		Launch:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", i18n.T("key.launch"))),
 		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("key.settings"))),
@@ -96,7 +98,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
-		{k.Copy, k.Deploy, k.Alt, k.Help, k.Quit},
+		{k.Copy, k.Deploy, k.Search, k.Alt, k.Help, k.Quit},
 	}
 }
 
@@ -134,6 +136,11 @@ type Model struct {
 	consCur  int
 	gameCur  int
 	filtered []rom.Game
+	// Search state: query is the committed filter (session-only),
+	// searching + searchBuf is the live input line above the info bar.
+	query     string
+	searching bool
+	searchBuf []rune
 
 	focus    Pane
 	meta     viewport.Model
@@ -334,11 +341,20 @@ func (m *Model) refilter() {
 	if m.consCur < len(m.rows) {
 		id = m.rows[m.consCur].ID
 	}
+	q := m.query
+	if m.searching {
+		q = string(m.searchBuf)
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
 	m.filtered = m.filtered[:0]
 	for _, g := range m.games {
-		if id == "all" || g.ConsoleID == id {
-			m.filtered = append(m.filtered, g)
+		if id != "all" && g.ConsoleID != id {
+			continue
 		}
+		if q != "" && !strings.Contains(strings.ToLower(g.Title), q) {
+			continue
+		}
+		m.filtered = append(m.filtered, g)
 	}
 	if m.gameCur >= len(m.filtered) {
 		m.gameCur = max(len(m.filtered)-1, 0)
@@ -824,10 +840,69 @@ func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 	})
 }
 
+// activeQuery returns the visible games filter: the live draft while
+// typing, the committed query otherwise.
+func (m Model) activeQuery() string {
+	if m.searching {
+		return string(m.searchBuf)
+	}
+	return m.query
+}
+
+// updateSearch handles keys while the search input line is open:
+// printable input filters the games list live, enter keeps the filter
+// and jumps to it, esc drops it. Arrows keep browsing the live results.
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.searching = false
+		m.searchBuf = nil
+		m.query = ""
+		m.sizeMeta()
+		m.refilter()
+		return m, nil
+	case tea.KeyEnter:
+		m.searching = false
+		m.query = strings.TrimSpace(string(m.searchBuf))
+		m.searchBuf = nil
+		m.sizeMeta()
+		m.setFocus(PaneGames)
+		m.refilter()
+		return m, nil
+	case tea.KeyBackspace:
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+		}
+		m.refilter()
+		return m, nil
+	case tea.KeyUp:
+		if m.gameCur > 0 {
+			m.selectGame(m.gameCur - 1)
+		}
+		return m, nil
+	case tea.KeyDown:
+		if m.gameCur < len(m.filtered)-1 {
+			m.selectGame(m.gameCur + 1)
+		}
+		return m, nil
+	case tea.KeyRunes, tea.KeySpace:
+		m.searchBuf = append(m.searchBuf, msg.Runes...)
+		m.refilter()
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Quit) { // ctrl+c still quits mid-input
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := m.keys
 	if m.mode == ModeSettings {
 		return m.updateSettings(msg)
+	}
+	if m.searching {
+		return m.updateSearch(msg)
 	}
 	switch {
 	case key.Matches(msg, k.Quit):
@@ -841,6 +916,13 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.launchSelected()
 	case key.Matches(msg, k.Settings):
 		m.openSettings()
+		return m, nil
+	case key.Matches(msg, k.Search):
+		// Prefill with the committed filter so it can be refined.
+		m.searching = true
+		m.searchBuf = []rune(m.query)
+		m.sizeMeta()
+		m.refilter()
 		return m, nil
 	}
 	if m.showHelp && msg.String() == "esc" {
@@ -1002,6 +1084,25 @@ func (m Model) helpHeight() int {
 	return max(lipgloss.Height(m.helpView()), 1)
 }
 
+// searchHeight reserves one row for the live search input line.
+func (m Model) searchHeight() int {
+	if m.searching {
+		return 1
+	}
+	return 0
+}
+
+// renderSearch draws the one-line search input above the info bar:
+// "/query▊", or a dim hint while empty.
+func (m Model) renderSearch() string {
+	w := m.contentW()
+	text := "/" + string(m.searchBuf) + "▊"
+	if len(m.searchBuf) == 0 {
+		text += " " + infoStyle.Render(i18n.T("search.hint"))
+	}
+	return fit(text, w)
+}
+
 // contentW/H is the drawable area inside the outer window gap.
 func (m Model) contentW() int {
 	w := m.width
@@ -1020,7 +1121,7 @@ func (m Model) contentH() int {
 }
 
 func (m Model) bodyH() int {
-	return max(m.contentH()-1-m.helpHeight(), 5) // single info-bar line, no slack
+	return max(m.contentH()-1-m.helpHeight()-m.searchHeight(), 5) // single info-bar line, no slack
 }
 
 // Column breakpoints on content width: three panes fit comfortably,
@@ -1114,18 +1215,15 @@ func (m Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 	}
 	var content string
-	if m.showHelp {
-		content = lipgloss.JoinVertical(lipgloss.Left,
-			body,
-			m.renderHelp(),
-			m.renderInfo(),
-		)
-	} else {
-		content = lipgloss.JoinVertical(lipgloss.Left,
-			body,
-			m.renderInfo(),
-		)
+	parts := []string{body}
+	if m.searching {
+		parts = append(parts, m.renderSearch())
 	}
+	if m.showHelp {
+		parts = append(parts, m.renderHelp())
+	}
+	parts = append(parts, m.renderInfo())
+	content = lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return appStyle.Render(content)
 }
 
@@ -1191,9 +1289,16 @@ func (m Model) renderGames(w int) string {
 	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
 		title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
 	}
+	if q := strings.TrimSpace(m.activeQuery()); q != "" {
+		title = i18n.T("games.title.search", q, len(m.filtered))
+	}
 	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
 	if len(m.filtered) == 0 {
-		lines = append(lines, infoStyle.Render(fit(i18n.T("games.empty"), w)))
+		empty := i18n.T("games.empty")
+		if strings.TrimSpace(m.activeQuery()) != "" {
+			empty = i18n.T("games.empty.search")
+		}
+		lines = append(lines, infoStyle.Render(fit(empty, w)))
 		return m.column(lines, w, 1, 1)
 	}
 	visible := max(m.bodyH()-1, 1)

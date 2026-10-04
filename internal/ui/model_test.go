@@ -1338,3 +1338,166 @@ func TestSetGamesFiltersInvalid(t *testing.T) {
 		}
 	}
 }
+
+// typeIntoSearch feeds runes one by one like real typing.
+func typeIntoSearch(t *testing.T, m Model, s string) Model {
+	t.Helper()
+	for _, r := range s {
+		out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = out.(Model)
+	}
+	return m
+}
+
+func startSearch(t *testing.T, m Model) Model {
+	t.Helper()
+	out, _ := m.Update(keyMsg("/"))
+	m = out.(Model)
+	if !m.searching {
+		t.Fatalf("slash must open search")
+	}
+	return m
+}
+
+func TestSearchLiveFilter(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneGames
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "kir")
+	if len(m.filtered) != 1 || m.filtered[0].Title != "Kirby Mirror" {
+		t.Fatalf("live filter broken: %+v", m.filtered)
+	}
+	if view := m.View(); !strings.Contains(view, "/kir") {
+		t.Fatalf("search line must show input\n%s", view)
+	}
+	// Backspace to empty restores the full list with a hint.
+	for range 3 {
+		out, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m = out.(Model)
+	}
+	if len(m.filtered) != 2 {
+		t.Fatalf("empty input must restore all games: %+v", m.filtered)
+	}
+	if view := m.View(); !strings.Contains(view, "type to filter") {
+		t.Fatalf("empty search must hint\n%s", view)
+	}
+	// Esc drops the input entirely.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.searching || m.query != "" || len(m.filtered) != 2 {
+		t.Fatalf("esc must clear search: searching=%v query=%q %+v", m.searching, m.query, m.filtered)
+	}
+}
+
+func TestSearchEnterKeepsEscClears(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneGames
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "battle")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if m.searching || m.query != "battle" {
+		t.Fatalf("enter must commit filter: searching=%v query=%q", m.searching, m.query)
+	}
+	if len(m.filtered) != 1 || m.focus != PaneGames {
+		t.Fatalf("committed filter broken: %+v focus=%d", m.filtered, m.focus)
+	}
+	if view := m.View(); !strings.Contains(view, "/battle") {
+		t.Fatalf("games title must show the filter\n%s", view)
+	}
+	// Slash reopens with the committed filter prefilled for refining.
+	m = startSearch(t, m)
+	if view := m.View(); !strings.Contains(view, "/battle") {
+		t.Fatalf("reopened search must prefill\n%s", view)
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.searching || m.query != "" || len(m.filtered) != 2 {
+		t.Fatalf("esc must clear committed filter: %+v", m.query)
+	}
+}
+
+func TestSearchNoMatches(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneGames
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "zzz")
+	if len(m.filtered) != 0 {
+		t.Fatalf("must match nothing: %+v", m.filtered)
+	}
+	view := m.View()
+	for _, want := range []string{"/zzz", "no matches"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view must show %q\n%s", want, view)
+		}
+	}
+}
+
+func TestSearchRespectsConsole(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	// Rows are [All, NES, GBA]: down moves to NES.
+	out, _ := m.Update(keyMsg("down"))
+	m = out.(Model)
+	if m.rows[m.consCur].ID != "nes" {
+		t.Fatalf("expected nes row, got %q", m.rows[m.consCur].ID)
+	}
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "kirby")
+	if len(m.filtered) != 0 {
+		t.Fatalf("search must stay inside the console scope: %+v", m.filtered)
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "battle")
+	if len(m.filtered) != 1 {
+		t.Fatalf("in-scope search broken: %+v", m.filtered)
+	}
+}
+
+func TestSearchArrowsHelpWidths(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	m.focus = PaneGames
+	out, _ := m.Update(keyMsg("?"))
+	m = out.(Model)
+	m = startSearch(t, m)
+	m = typeIntoSearch(t, m, "o") // both sample games contain o
+	if len(m.filtered) != 2 {
+		t.Fatalf("expected both games, got %+v", m.filtered)
+	}
+	out, _ = m.Update(keyMsg("down"))
+	m = out.(Model)
+	if m.gameCur != 1 || !m.searching {
+		t.Fatalf("arrows must browse without leaving search: cur=%d", m.gameCur)
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = out.(Model)
+	if m.gameCur != 0 {
+		t.Fatalf("up must move back: cur=%d", m.gameCur)
+	}
+	// Help lists the search key; the search line fits narrow screens.
+	if view := m.View(); !strings.Contains(view, "search") {
+		t.Fatalf("help must document search\n%s", view)
+	}
+	for _, w := range []int{120, 70, 40, 24} {
+		mm := resizeModel(t, m, w)
+		for i, ln := range strings.Split(mm.View(), "\n") {
+			if got := lipgloss.Width(ln); got > w {
+				t.Fatalf("w=%d line %d overflows: %d\n%s", w, i, got, mm.View())
+			}
+		}
+	}
+}
+
+func TestSearchIgnoredInSettings(t *testing.T) {
+	m := openSettings(t, settingsModel(t))
+	out, _ := m.Update(keyMsg("/"))
+	if out.(Model).searching {
+		t.Fatalf("slash in settings must not start search")
+	}
+}
