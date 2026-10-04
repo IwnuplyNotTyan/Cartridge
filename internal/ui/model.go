@@ -528,6 +528,31 @@ func (m Model) shelfPos() int {
 	return 0
 }
 
+// stickyHeader returns the section header to pin above the window: the
+// header of the topmost visible game, but only when that header itself
+// scrolled off. Flat category lists have no headers at all.
+func (m Model) stickyHeader(start, end int) (string, bool) {
+	top := -1
+	for i := start; i < end && i < len(m.shelf); i++ {
+		if m.shelf[i].kind == shelfGame {
+			top = i
+			break
+		}
+	}
+	if top < 0 {
+		return "", false
+	}
+	for i := top; i >= 0; i-- {
+		if m.shelf[i].kind == shelfHeader {
+			if i >= start {
+				return "", false
+			}
+			return m.shelf[i].label, true
+		}
+	}
+	return "", false
+}
+
 func (m Model) selected() *rom.Game {
 	if len(m.filtered) == 0 || m.gameCur >= len(m.filtered) {
 		return nil
@@ -1498,7 +1523,15 @@ func (m Model) renderGames(w int) string {
 	visible := max(m.bodyH()-1, 1)
 	pos := m.shelfPos()
 	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
-	for i := start; i < min(start+visible, len(m.shelf)); i++ {
+	end := min(start+visible, len(m.shelf))
+	// Sticky section header: when the window cuts into a section whose
+	// header scrolled off, pin it on top and drop the last row to keep
+	// the height. A header already in view needs no pin.
+	if label, ok := m.stickyHeader(start, end); ok && end > start {
+		lines = append(lines, titleDim.Render(fit("  "+truncate(label, w-2), w)))
+		end--
+	}
+	for i := start; i < end; i++ {
 		row := m.shelf[i]
 		switch row.kind {
 		case shelfHeader:

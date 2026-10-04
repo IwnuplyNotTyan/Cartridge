@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -310,6 +311,99 @@ func TestShelfSevenGamesLimit(t *testing.T) {
 	for i, want := range []string{"Game g00", "Game f00", "Game e00", "Game d00", "Game c00"} {
 		if first[i] != want {
 			t.Fatalf("recent order = %v", first)
+		}
+	}
+}
+
+// shelfScrollModel builds a 40-game shelf that scrolls at 120x30:
+// RecentH + 5 played + blank + FavH + 1 fav + blank + AllH + 34 rest
+// (45 rows, 26 visible).
+func shelfScrollModel(t *testing.T) Model {
+	t.Helper()
+	i18n.Set(i18n.En)
+	var games []rom.Game
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("g%02d", i)
+		games = append(games, rom.Game{
+			ID: id, Title: "Game " + id, ConsoleID: "nes",
+			ConsoleName: "Nintendo Entertainment System",
+			Path:        "/x/" + id + ".nes", SHA256: id,
+		})
+	}
+	play, err := playtime.Load(filepath.Join(t.TempDir(), "playtime.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 7; i++ {
+		play.Add(fmt.Sprintf("g%02d", i), time.Second)
+	}
+	fav, err := favorites.Load(filepath.Join(t.TempDir(), "favorites.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fav.Add("g10")
+	m := sizedModel(t, New(games, "/x", "/tmp/lib.json",
+		WithFavorites(fav), WithPlaytime(play)))
+	m.focus = PaneGames
+	if len(m.shelf) != 45 {
+		t.Fatalf("fixture must scroll: %d rows", len(m.shelf))
+	}
+	return m
+}
+
+// viewLines splits a rendered view (line 0 is the outer gap, line 1 the
+// pane title, line 2 the first shelf row).
+func viewLines(view string) []string { return strings.Split(view, "\n") }
+
+func TestShelfStickyBottom(t *testing.T) {
+	m := shelfScrollModel(t)
+	m.gameCur = len(m.filtered) - 1 // last game, "All games" section
+	lines := viewLines(m.View())
+	if !strings.Contains(lines[2], "All games") {
+		t.Fatalf("sticky header must pin the section:\n%s", m.View())
+	}
+	if n := strings.Count(m.View(), "All games"); n != 1 {
+		t.Fatalf("sticky header must not duplicate: %d", n)
+	}
+}
+
+func TestShelfStickyMiddle(t *testing.T) {
+	m := shelfScrollModel(t)
+	m.gameCur = 16 // a rest game mid-list; its section header is off-view
+	lines := viewLines(m.View())
+	// Window starts at the fav game row: sticky shows Favorites once.
+	if !strings.Contains(lines[2], "Favorites") {
+		t.Fatalf("sticky header must pin Favorites:\n%s", m.View())
+	}
+	if n := strings.Count(m.View(), "Favorites"); n != 1 {
+		t.Fatalf("sticky header must not duplicate: %d", n)
+	}
+}
+
+func TestShelfNoStickyAtTop(t *testing.T) {
+	m := shelfScrollModel(t)
+	m.gameCur = 0 // top: the Recent header is visible itself
+	lines := viewLines(m.View())
+	if !strings.Contains(lines[2], "Recent") {
+		t.Fatalf("top must show the real header:\n%s", m.View())
+	}
+	if n := strings.Count(m.View(), "Recent"); n != 1 {
+		t.Fatalf("no sticky duplicate at top: %d", n)
+	}
+}
+
+func TestShelfFlatScrollNoSticky(t *testing.T) {
+	m := shelfScrollModel(t)
+	m.consCur = 1 // NES scope: flat list, no sections at all
+	m.refilter()
+	m.gameCur = len(m.filtered) - 1
+	view := m.View()
+	if !strings.Contains(view, "Game g39") {
+		t.Fatalf("flat list must scroll to the end:\n%s", view)
+	}
+	for _, s := range []string{"Recent", "Favorites", "All games"} {
+		if strings.Contains(view, s) {
+			t.Fatalf("flat scope must not pin %q:\n%s", s, view)
 		}
 	}
 }
