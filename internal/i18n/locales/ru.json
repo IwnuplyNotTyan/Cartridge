@@ -26,6 +26,7 @@
     "key.favorite": "в избранное",
     "home.recent": "Недавние",
     "home.favorites": "Избранное",
+    "shelf.all": "Все игры",
     "home.empty.recent": "Пока пусто - запустите игру клавишей x",
     "home.empty.favorites": "Нет избранного - нажмите f на игре",
     "status.fav.added": "добавлено в избранное: %s",

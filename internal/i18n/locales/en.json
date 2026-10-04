@@ -26,6 +26,7 @@
     "key.favorite": "favorite",
     "home.recent": "Recent",
     "home.favorites": "Favorites",
+    "shelf.all": "All games",
     "home.empty.recent": "No recent games yet - launch something with x",
     "home.empty.favorites": "No favorites yet - press f on a game",
     "status.fav.added": "added to favorites: %s",

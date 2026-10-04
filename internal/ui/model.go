@@ -392,53 +392,58 @@ func (m *Model) refilter() {
 		}
 		scoped = append(scoped, g)
 	}
-	// Shelf order, each game shown once: recent (newest first, capped),
-	// then favorites, then the rest.
-	played := map[string]int64{}
-	if m.play != nil {
-		for _, g := range scoped {
-			if st, ok := m.play.Get(g.ID); ok {
-				played[g.ID] = st.LastPlayed.UnixNano()
-			}
-		}
-	}
+	// The shelf lives only on the All view: recent (newest first,
+	// capped), then favorites, then the rest, each game shown once.
+	// Console categories stay a plain list in library order.
 	var recent, favs, rest []rom.Game
-	inShelf := map[string]bool{}
-	if len(played) > 0 {
-		type playedGame struct {
-			g  rom.Game
-			at int64
+	if id == "all" {
+		played := map[string]int64{}
+		if m.play != nil {
+			for _, g := range scoped {
+				if st, ok := m.play.Get(g.ID); ok {
+					played[g.ID] = st.LastPlayed.UnixNano()
+				}
+			}
 		}
-		var pl []playedGame
+		inShelf := map[string]bool{}
+		if len(played) > 0 {
+			type playedGame struct {
+				g  rom.Game
+				at int64
+			}
+			var pl []playedGame
+			for _, g := range scoped {
+				if at, ok := played[g.ID]; ok {
+					pl = append(pl, playedGame{g, at})
+				}
+			}
+			sort.Slice(pl, func(i, j int) bool {
+				if pl[i].at == pl[j].at {
+					return pl[i].g.ID < pl[j].g.ID
+				}
+				return pl[i].at > pl[j].at
+			})
+			for i, p := range pl {
+				if i >= recentLimit {
+					break
+				}
+				recent = append(recent, p.g)
+				inShelf[p.g.ID] = true
+			}
+		}
 		for _, g := range scoped {
-			if at, ok := played[g.ID]; ok {
-				pl = append(pl, playedGame{g, at})
+			if inShelf[g.ID] {
+				continue
 			}
-		}
-		sort.Slice(pl, func(i, j int) bool {
-			if pl[i].at == pl[j].at {
-				return pl[i].g.ID < pl[j].g.ID
+			if m.favorites.Has(g.ID) {
+				favs = append(favs, g)
+			} else {
+				rest = append(rest, g)
 			}
-			return pl[i].at > pl[j].at
-		})
-		for i, p := range pl {
-			if i >= recentLimit {
-				break
-			}
-			recent = append(recent, p.g)
-			inShelf[p.g.ID] = true
+			inShelf[g.ID] = true
 		}
-	}
-	for _, g := range scoped {
-		if inShelf[g.ID] {
-			continue
-		}
-		if m.favorites.Has(g.ID) {
-			favs = append(favs, g)
-		} else {
-			rest = append(rest, g)
-		}
-		inShelf[g.ID] = true
+	} else {
+		rest = scoped
 	}
 	m.filtered = m.filtered[:0]
 	for _, g := range recent {
@@ -450,10 +455,10 @@ func (m *Model) refilter() {
 	for _, g := range rest {
 		m.filtered = append(m.filtered, g)
 	}
-	// Display rows: a header per special section (a hint when it is empty
-	// and nothing filters), single blank lines between blocks.
-	// The rest needs no header: the pane title already covers it.
-	m.shelf = m.buildShelf(recent, favs, rest, q != "")
+	// Display rows: headers per section (a hint when it is empty and
+	// nothing filters), single blank lines between blocks. Categories
+	// stay flat: no sections outside the All view.
+	m.shelf = m.buildShelf(id == "all", recent, favs, rest, q != "")
 	if m.gameCur >= len(m.filtered) {
 		m.gameCur = max(len(m.filtered)-1, 0)
 	}
@@ -465,10 +470,18 @@ func (m *Model) refilter() {
 
 // buildShelf renders section rows for filtered games already appended to
 // m.filtered in shelf order (recent, favorites, rest). game indexes the
-// flat filtered list, so it is just a running counter here.
-func (m *Model) buildShelf(recent, favs, rest []rom.Game, filtered bool) []shelfRow {
+// flat filtered list, so it is just a running counter here. Outside the
+// All view (shelfOn=false) it is a plain game list with no sections.
+func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered bool) []shelfRow {
 	rows := m.shelf[:0]
 	game := 0
+	if !shelfOn {
+		for range m.filtered {
+			rows = append(rows, shelfRow{kind: shelfGame, game: game})
+			game++
+		}
+		return rows
+	}
 	section := func(labelKey, hintKey string, list []rom.Game) {
 		if len(list) == 0 && filtered {
 			return // querying: empty sections vanish entirely
@@ -490,14 +503,16 @@ func (m *Model) buildShelf(recent, favs, rest []rom.Game, filtered bool) []shelf
 	}
 	section("home.recent", "home.empty.recent", recent)
 	section("home.favorites", "home.empty.favorites", favs)
-	if len(rest) > 0 {
-		if len(rows) > 0 {
-			rows = append(rows, shelfRow{kind: shelfBlank})
-		}
-		for range rest {
-			rows = append(rows, shelfRow{kind: shelfGame, game: game})
-			game++
-		}
+	if len(rest) == 0 {
+		return rows
+	}
+	if len(rows) > 0 {
+		rows = append(rows, shelfRow{kind: shelfBlank})
+	}
+	rows = append(rows, shelfRow{kind: shelfHeader, label: i18n.T("shelf.all")})
+	for range rest {
+		rows = append(rows, shelfRow{kind: shelfGame, game: game})
+		game++
 	}
 	return rows
 }

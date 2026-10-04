@@ -119,7 +119,7 @@ func TestShelfEmptyHints(t *testing.T) {
 	want := []string{
 		"[Recent]", "hint:No recent games yet - launch something with x", "",
 		"[Favorites]", "hint:No favorites yet - press f on a game", "",
-		"Battletoads", "Kirby Mirror",
+		"[All games]", "Battletoads", "Kirby Mirror",
 	}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
@@ -170,7 +170,7 @@ func TestShelfToggleMovesSections(t *testing.T) {
 	want := []string{
 		"[Recent]", "hint:No recent games yet - launch something with x", "",
 		"[Favorites]", "Battletoads", "",
-		"Kirby Mirror",
+		"[All games]", "Kirby Mirror",
 	}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
@@ -212,6 +212,38 @@ func TestShelfSearchFlattens(t *testing.T) {
 	want := []string{"[Favorites]", "Kirby Mirror"}
 	if !equalStrings(got, want) {
 		t.Fatalf("search shelf = %q", got)
+	}
+}
+
+func TestShelfConsoleScopeIsFlat(t *testing.T) {
+	fav, err := favorites.Load(filepath.Join(t.TempDir(), "favorites.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fav.Add("bbb222")
+	play, err := playtime.Load(filepath.Join(t.TempDir(), "playtime.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	play.Add("aaa111", time.Second)
+	m := shelfModel(t, WithFavorites(fav), WithPlaytime(play))
+	// Rows: All, NES, GBA. One step down reaches NES.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = out.(Model)
+	if m.rows[m.consCur].ID != "nes" {
+		t.Fatalf("must land on nes, got %q", m.rows[m.consCur].ID)
+	}
+	// No sections outside the All view: plain games, library order.
+	for _, r := range m.shelf {
+		if r.kind != shelfGame {
+			t.Fatalf("console scope must be flat, got %+v", r)
+		}
+	}
+	if len(m.filtered) != 1 || m.filtered[0].Title != "Battletoads" {
+		t.Fatalf("nes scope = %+v", m.filtered)
+	}
+	if view := m.View(); strings.Contains(view, "Recent") || strings.Contains(view, "All games") {
+		t.Fatalf("no section headers in categories\n%s", view)
 	}
 }
 
