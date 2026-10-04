@@ -367,7 +367,7 @@ func TestShelfStickyBottom(t *testing.T) {
 		t.Fatalf("plain title must be replaced:\n%s", m.View())
 	}
 	if n := strings.Count(m.View(), "All games"); n != 1 {
-		t.Fatalf("sticky title must not duplicate: %d", n)
+		t.Fatalf("section title must not duplicate: %d", n)
 	}
 }
 
@@ -380,19 +380,29 @@ func TestShelfStickyMiddle(t *testing.T) {
 		t.Fatalf("title must stick to Favorites:\n%s", m.View())
 	}
 	if n := strings.Count(m.View(), "Favorites"); n != 1 {
-		t.Fatalf("sticky title must not duplicate: %d", n)
+		t.Fatalf("section title must not duplicate: %d", n)
 	}
 }
 
-func TestShelfNoStickyAtTop(t *testing.T) {
+func TestShelfTitleTopShowsSection(t *testing.T) {
 	m := shelfScrollModel(t)
-	m.gameCur = 0 // top: the Recent header is visible itself
+	m.gameCur = 0 // top, nothing scrolled: the title names Recent anyway
 	lines := viewLines(m.View())
-	if !strings.Contains(lines[1], "Games (40)") {
-		t.Fatalf("top must keep the plain title:\n%s", m.View())
+	if !strings.Contains(lines[1], "Recent") {
+		t.Fatalf("top title must name the section:\n%s", m.View())
 	}
-	if !strings.Contains(lines[2], "Recent") {
-		t.Fatalf("top must show the real header:\n%s", m.View())
+	if strings.Contains(m.View(), "Games (") {
+		t.Fatalf("plain title must be replaced:\n%s", m.View())
+	}
+}
+
+func TestShelfTitleBlankTop(t *testing.T) {
+	m := shelfScrollModel(t)
+	m.gameCur = 17 // window opens exactly on the blank before All games
+	lines := viewLines(m.View())
+	// A blank top row belongs to the section below it.
+	if !strings.Contains(lines[1], "All games") {
+		t.Fatalf("blank top must resolve down:\n%s", m.View())
 	}
 }
 

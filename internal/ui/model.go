@@ -528,27 +528,24 @@ func (m Model) shelfPos() int {
 	return 0
 }
 
-// stickyHeader returns the section header that owns the topmost visible
-// game: when that header itself scrolled off, the pane title takes its
-// place. A header already in view needs nothing, and flat category
-// lists have no headers at all.
-func (m Model) stickyHeader(start, end int) (string, bool) {
-	top := -1
+// topSection returns the section owning the top of the window: the
+// first non-blank row names it (headers name themselves, games and
+// hints resolve to the header above). A blank top row belongs to the
+// section below it. Flat category lists have no sections at all.
+func (m Model) topSection(start, end int) (string, bool) {
 	for i := start; i < end && i < len(m.shelf); i++ {
-		if m.shelf[i].kind == shelfGame {
-			top = i
-			break
-		}
-	}
-	if top < 0 {
-		return "", false
-	}
-	for i := top; i >= 0; i-- {
-		if m.shelf[i].kind == shelfHeader {
-			if i >= start {
-				return "", false
-			}
+		switch m.shelf[i].kind {
+		case shelfHeader:
 			return m.shelf[i].label, true
+		case shelfBlank:
+			continue
+		default:
+			for j := i; j >= 0; j-- {
+				if m.shelf[j].kind == shelfHeader {
+					return m.shelf[j].label, true
+				}
+			}
+			return "", false
 		}
 	}
 	return "", false
@@ -1526,12 +1523,12 @@ func (m Model) renderGames(w int) string {
 	pos := m.shelfPos()
 	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
 	end := min(start+visible, len(m.shelf))
-	// Sticky section header: when the window cuts into a section whose
-	// header scrolled off, the pane title itself becomes that section.
-	// A visible header or an active search filter keeps the normal title.
+	// The pane title always names the topmost visible section, so the
+	// shelf reads even without scrolling; the search filter wins while
+	// querying. Flat category lists keep the plain title.
 	if q := strings.TrimSpace(m.activeQuery()); q != "" {
 		title = i18n.T("games.title.search", q, len(m.filtered))
-	} else if label, ok := m.stickyHeader(start, end); ok {
+	} else if label, ok := m.topSection(start, end); ok {
 		title = label
 	}
 	lines = append(lines, titleFor(truncate(title, w), m.focus == PaneGames, w))
