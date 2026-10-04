@@ -30,7 +30,7 @@ func TestParse(t *testing.T) {
 		"ru":      Ru,
 		"ru_RU":   Ru,
 		"russian": Ru,
-		"de":      En,
+		"zz":      En,
 	} {
 		if got := Parse(in); got != want {
 			t.Fatalf("Parse(%q) = %q, want %q", in, got, want)

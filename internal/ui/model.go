@@ -656,7 +656,7 @@ func (m *Model) toggleSoftpatch() {
 		m.refreshMeta()
 		msg := i18n.T("status.mod.deployed", filepath.Base(dst))
 		if d := modCheckDetail(*g, chk); d != "" {
-			msg += " — " + d
+			msg += " - " + d
 		}
 		m.status = msg
 		return
@@ -1774,7 +1774,7 @@ func featText(supported bool, extra string, g rom.Game, r *emulate.Recipe) strin
 		if expanded, err := r.Expand(extra, g); err == nil {
 			extra = expanded
 		}
-		s += " — " + extra
+		s += " - " + extra
 	}
 	return s
 }

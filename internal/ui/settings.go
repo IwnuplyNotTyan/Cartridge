@@ -66,27 +66,30 @@ func tabTitle(t SettingsTab) string {
 	}
 }
 
-// langOptions returns settings language choices as (fileValue, labelKey).
+// langOptions returns settings language choices as (fileValue, display):
+// Auto first, then every loaded language (shipped or dropped into the
+// locales dir). Display names come from the locale files themselves.
 func langOptions() [][2]string {
-	return [][2]string{
-		{"auto", "sett.lang.auto"},
-		{"en", "sett.lang.en"},
-		{"ru", "sett.lang.ru"},
+	opts := [][2]string{{"auto", i18n.T("sett.lang.auto")}}
+	for _, l := range i18n.Langs() {
+		opts = append(opts, [2]string{string(l), i18n.Name(l)})
 	}
+	return opts
 }
 
 // langCur returns the cursor index matching the stored raw lang value.
 func (m Model) langCur() int {
-	switch strings.ToLower(strings.TrimSpace(m.langRaw)) {
-	case "ru", "rus", "russian", "ru_ru", "ru-ru":
-		return 2
-	case "en", "eng", "english":
-		return 1
-	default:
-		// Empty or "auto": show Auto, unless the file had no lang at all
-		// and detection resolved to en/ru — still show Auto as the source.
+	opts := langOptions()
+	want := string(i18n.Parse(m.langRaw))
+	if want == string(i18n.Auto) {
 		return 0
 	}
+	for i, opt := range opts {
+		if opt[0] == want {
+			return i
+		}
+	}
+	return 0
 }
 
 // openSettings enters settings mode, keeping bar+help.
@@ -174,21 +177,16 @@ func (m *Model) persistSettings() error {
 }
 
 // applyLanguage switches the UI language at once and persists it.
+// The stored value is always a code ("auto", "en", "ru", "de", ...),
+// whatever spelling the user had before.
 func (m *Model) applyLanguage(raw string) {
-	raw = strings.ToLower(strings.TrimSpace(raw))
-	if raw == "" {
-		raw = "auto"
-	}
-	m.langRaw = raw
-	switch raw {
-	case "ru", "rus", "russian":
-		i18n.Set(i18n.Ru)
-	case "en", "eng", "english":
-		i18n.Set(i18n.En)
-	default:
+	l := i18n.Parse(raw)
+	if l == i18n.Auto {
 		m.langRaw = "auto"
-		i18n.Set(i18n.Auto)
+	} else {
+		m.langRaw = string(l)
 	}
+	i18n.Set(l)
 	m.keys = newKeyMap()
 	m.setGames(m.games)
 	m.refreshMeta()
@@ -915,7 +913,7 @@ func (m Model) renderLangTab(w int) []string {
 	var lines []string
 	cur := m.langCur()
 	for i, opt := range langOptions() {
-		label := i18n.T(opt[1])
+		label := opt[1]
 		plain := fit("  "+truncate(label, w-2), w)
 		if i == m.settCur {
 			plain = styledRow(plain)
@@ -1042,7 +1040,7 @@ func fieldDisplay(name string, base, eff emulate.Recipe) string {
 		val = ""
 	}
 	if strings.TrimSpace(val) == "" {
-		val = "—"
+		val = "-"
 	}
 	return val
 }
@@ -1054,7 +1052,7 @@ func featShort(supported bool, extra string) string {
 		s = i18n.T("feat.yes")
 	}
 	if strings.TrimSpace(extra) != "" {
-		s += " — " + extra
+		s += " - " + extra
 	}
 	return s
 }

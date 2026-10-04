@@ -234,12 +234,11 @@ func ExpandPath(p string) string { return expandPath(p) }
 
 // ToFile converts a resolved Config back to its on-disk form.
 func (c Config) ToFile() File {
+	// Any loaded language code round-trips ("en", "ru", "de", ...);
+	// unknown values persist as empty (system default).
 	lang := ""
-	switch c.Lang {
-	case i18n.Ru:
-		lang = "ru"
-	case i18n.En:
-		lang = "en"
+	if i18n.Valid(c.Lang) {
+		lang = string(c.Lang)
 	}
 	return File{
 		RomDir:    c.RomDir,

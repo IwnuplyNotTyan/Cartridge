@@ -74,7 +74,7 @@ func TestThreeColumnsRender(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
 	view := m.View()
 	for _, want := range []string{
-		"CONSOLES", "GAMES", "METADATA", // pane titles
+		"Consoles", "Games", "Metadata", // pane titles
 		"Battletoads",                   // game + metadata
 		"Nintendo Entertainment System", // full console name
 		"│",                             // grey dividers, no full borders
@@ -124,7 +124,7 @@ func TestHelpToggle(t *testing.T) {
 		t.Fatalf("expected full help after ?")
 	}
 	view := m.View()
-	for _, want := range []string{"move up", "rescan", "quit", "CONSOLES", "GAMES", "METADATA"} {
+	for _, want := range []string{"move up", "rescan", "quit", "Consoles", "Games", "Metadata"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("help view missing %q\n%s", want, view)
 		}
@@ -176,7 +176,7 @@ func TestRussianRender(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
 	view := m.View()
 	for _, want := range []string{
-		"КОНСОЛИ", "ИГРЫ", "МЕТАДАННЫЕ",
+		"Консоли", "Игры", "Метаданные",
 		"Все консоли", "Помощь", "1 байт", "МиБ",
 	} {
 		if !strings.Contains(view, want) {
@@ -466,12 +466,12 @@ func TestAdaptiveViewHidesPanes(t *testing.T) {
 	m = resizeModel(t, m, 70)
 	m.focus = PaneConsoles
 	view := m.View()
-	for _, want := range []string{"CONSOLES", "GAMES"} {
+	for _, want := range []string{"Consoles", "Games"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("medium view must show %q\n%s", want, view)
 		}
 	}
-	if strings.Contains(view, "METADATA") {
+	if strings.Contains(view, "Metadata") {
 		t.Fatalf("medium view must hide metadata\n%s", view)
 	}
 	// A selected game keeps metadata on the right: games or meta focus
@@ -479,22 +479,22 @@ func TestAdaptiveViewHidesPanes(t *testing.T) {
 	for _, f := range []Pane{PaneGames, PaneMeta} {
 		m.focus = f
 		view = m.View()
-		for _, want := range []string{"GAMES", "METADATA"} {
+		for _, want := range []string{"Games", "Metadata"} {
 			if !strings.Contains(view, want) {
 				t.Fatalf("focus %v view must show %q\n%s", f, want, view)
 			}
 		}
-		if strings.Contains(view, "CONSOLES") {
+		if strings.Contains(view, "Consoles") {
 			t.Fatalf("focus %v view must hide consoles\n%s", f, view)
 		}
 	}
 	m = resizeModel(t, m, 40)
 	m.focus = PaneGames
 	view = m.View()
-	if !strings.Contains(view, "GAMES") {
+	if !strings.Contains(view, "Games") {
 		t.Fatalf("tiny view must show focused pane\n%s", view)
 	}
-	for _, gone := range []string{"CONSOLES", "METADATA"} {
+	for _, gone := range []string{"Consoles", "Metadata"} {
 		if strings.Contains(view, gone) {
 			t.Fatalf("tiny view must hide %q\n%s", gone, view)
 		}

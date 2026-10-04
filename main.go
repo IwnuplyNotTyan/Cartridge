@@ -81,6 +81,11 @@ func rawLang(flagVal string, cfg config.Config) string {
 }
 
 func main() {
+	// Extra languages: drop de.json into the locales dir and it appears
+	// in the language tab with no rebuild. Broken files warn, never kill.
+	if _, err := i18n.LoadDir(i18n.ExternalDir()); err != nil {
+		fmt.Fprintf(os.Stderr, "cartridge: locales: %v\n", err)
+	}
 	// Preliminary language so --help itself is localized.
 	i18n.Set(usageLang())
 
