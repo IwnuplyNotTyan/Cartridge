@@ -23,6 +23,7 @@ import (
 
 	"cartridge/internal/cheats"
 	"cartridge/internal/emulate"
+	"cartridge/internal/favorites"
 	"cartridge/internal/i18n"
 	"cartridge/internal/mods"
 	"cartridge/internal/overrides"
@@ -56,6 +57,8 @@ type keyMap struct {
 	Copy     key.Binding
 	Deploy   key.Binding
 	Search   key.Binding
+	Favorite key.Binding
+	Home     key.Binding
 	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
@@ -78,6 +81,8 @@ func newKeyMap() keyMap {
 		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("key.settings"))),
 		Copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", i18n.T("key.copy"))),
 		Deploy:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", i18n.T("key.deploy"))),
+		Favorite: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", i18n.T("key.favorite"))),
+		Home:     key.NewBinding(key.WithKeys("0"), key.WithHelp("0", i18n.T("key.home"))),
 		Alt:      key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", i18n.T("key.alt"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
@@ -93,14 +98,29 @@ func pluralWord(n int, key string) string {
 func (k keyMap) ShortHelp() []key.Binding { return []key.Binding{k.Help, k.Quit} }
 
 // FullHelp implements help.KeyMap.
+// NB: bubbles renders each inner slice as a COLUMN, so keep exactly 4:
+// more columns widen every help line and break narrow screens.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
-		{k.Copy, k.Deploy, k.Search, k.Alt, k.Help, k.Quit},
+		{k.Copy, k.Deploy, k.Search, k.Favorite, k.Alt, k.Home, k.Help, k.Quit},
 	}
 }
+
+// homeItem is one home-page row: a section header, a dim hint line for
+// an empty section, or a selectable game.
+type homeItem struct {
+	selectable bool
+	header     bool
+	title      string
+	sub        string
+	game       rom.Game
+}
+
+// recentLimit caps the recent-games section of the home page.
+const recentLimit = 5
 
 // ConsoleRow is one entry of the left column.
 type ConsoleRow struct {
@@ -181,9 +201,14 @@ type Model struct {
 	status  string
 
 	recipes []emulate.Recipe
-	// overrides persists per-game emulator/core picks from metadata (n/p).
+	// overrides persists per-game emulator/core choices from metadata (n/p).
 	overrides *overrides.Store
 	play      *playtime.Store
+	// favorites persists favorite game IDs shown on the home page.
+	favorites *favorites.Store
+	// Home page state: a flat list of section headers and game rows.
+	homeCur   int
+	homeItems []homeItem
 
 	// Settings screen state. Only the bottom bar and help survive
 	// from the browser view; tabs sit on top.
@@ -236,6 +261,11 @@ func WithPlaytime(s *playtime.Store) Option {
 // WithOverrides sets the per-game emulator/core choice store.
 func WithOverrides(s *overrides.Store) Option {
 	return func(m *Model) { m.overrides = s }
+}
+
+// WithFavorites sets the favorite games store shown on the home page.
+func WithFavorites(s *favorites.Store) Option {
+	return func(m *Model) { m.favorites = s }
 }
 
 // WithBaseRecipes keeps the unpatched base recipes for the settings view.
@@ -788,6 +818,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
 		}
+		if m.mode == ModeHome {
+			m.rebuildHome()
+		}
 		m.sizeMeta()
 		m.refreshMeta()
 		return m, nil
@@ -805,6 +838,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
+		}
+		if m.mode == ModeHome {
+			m.rebuildHome() // the just-played game tops Recent
 		}
 		m.refreshMeta()
 		return m, nil
@@ -901,6 +937,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == ModeSettings {
 		return m.updateSettings(msg)
 	}
+	if m.mode == ModeHome {
+		return m.updateHome(msg)
+	}
 	if m.searching {
 		return m.updateSearch(msg)
 	}
@@ -914,6 +953,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, k.Launch):
 		return m.launchSelected()
+	case key.Matches(msg, k.Favorite):
+		m.toggleFavorite()
+		return m, nil
 	case key.Matches(msg, k.Settings):
 		m.openSettings()
 		return m, nil
@@ -940,6 +982,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "0":
+		m.openHome()
+		return m, nil
 	case "1":
 		m.setFocus(PaneConsoles)
 		return m, nil
@@ -1190,6 +1235,8 @@ func (m Model) View() string {
 	var body string
 	if m.mode == ModeSettings {
 		body = m.renderSettings()
+	} else if m.mode == ModeHome {
+		body = m.renderHome()
 	} else {
 		cw, gw, mw := m.layout()
 		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
@@ -1304,7 +1351,11 @@ func (m Model) renderGames(w int) string {
 	visible := max(m.bodyH()-1, 1)
 	start := clamp(m.gameCur-visible/2, 0, max(len(m.filtered)-visible, 0))
 	for i := start; i < min(start+visible, len(m.filtered)); i++ {
-		plain := fit("  "+truncate(m.filtered[i].Title, w-2), w)
+		mark := ""
+		if m.favorites.Has(m.filtered[i].ID) {
+			mark = " ★"
+		}
+		plain := fit("  "+truncate(m.filtered[i].Title, w-2-lipgloss.Width(mark))+mark, w)
 		if i == m.gameCur {
 			plain = styledRow(plain)
 		}
@@ -1887,6 +1938,15 @@ func featText(supported bool, extra string, g rom.Game, r *emulate.Recipe) strin
 func dim(s string) string { return infoStyle.Render(s) }
 
 // renderHelp is the bubbles full-help strip right above the bottom bar.
+// barGame is the game shown in the bottom bar: the home cursor pick on
+// the home page, the browser selection elsewhere.
+func (m Model) barGame() *rom.Game {
+	if m.mode == ModeHome {
+		return m.homeSelected()
+	}
+	return m.selected()
+}
+
 func (m Model) renderHelp() string {
 	if !m.showHelp {
 		return ""
@@ -1918,7 +1978,7 @@ func (m Model) renderInfo() string {
 	if ctxBudget > 4 {
 		if m.status != "" {
 			right = barStyle.Render(truncate(m.status, ctxBudget))
-		} else if g := m.selected(); g != nil {
+		} else if g := m.barGame(); g != nil {
 			sid := g.ShortID()
 			if tb := ctxBudget - lipgloss.Width(sid) - 3 - 2; tb >= 4 {
 				right = barStyle.Render(sid+" • ") + titleBadge.Render(" "+truncate(g.Title, tb)+" ")
@@ -1949,7 +2009,7 @@ func (m Model) barHalves(romB, titleB, statusB int) (string, string) {
 	var context string
 	if m.status != "" {
 		context = barStyle.Render(truncate(m.status, statusB))
-	} else if g := m.selected(); g != nil {
+	} else if g := m.barGame(); g != nil {
 		context = barStyle.Render(g.ShortID()+" • ") +
 			titleBadge.Render(" "+truncate(g.Title, titleB)+" ")
 	}

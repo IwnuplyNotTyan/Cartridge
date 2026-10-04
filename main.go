@@ -12,6 +12,7 @@ import (
 
 	"cartridge/internal/config"
 	"cartridge/internal/emulate"
+	"cartridge/internal/favorites"
 	"cartridge/internal/i18n"
 	"cartridge/internal/library"
 	"cartridge/internal/overrides"
@@ -140,6 +141,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
 		os.Exit(1)
 	}
+	fav, err := favorites.Load(favorites.DefaultPath(cfg.Library))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
+		os.Exit(1)
+	}
 
 	stored, err := library.Load(cfg.Library)
 	if err != nil {
@@ -175,7 +181,8 @@ func main() {
 		ui.WithPatchedDir(cfg.Patched),
 		ui.WithLangRaw(rawLang(*lang, cfg)),
 		ui.WithPlaytime(play),
-		ui.WithOverrides(over))
+		ui.WithOverrides(over),
+		ui.WithFavorites(fav))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)

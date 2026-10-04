@@ -13,12 +13,13 @@ import (
 	"cartridge/internal/i18n"
 )
 
-// Mode is the top-level screen: browser or settings.
+// Mode is the top-level screen: browser, home page or settings.
 // Settings keeps only the bottom bar and help from the browser view.
 type Mode int
 
 const (
 	ModeBrowser Mode = iota
+	ModeHome
 	ModeSettings
 )
 
