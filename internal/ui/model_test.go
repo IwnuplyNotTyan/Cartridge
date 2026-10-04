@@ -177,7 +177,7 @@ func TestRussianRender(t *testing.T) {
 	view := m.View()
 	for _, want := range []string{
 		"Консоли", "Недавние", "Метаданные",
-		"Все консоли", "Помощь", "1 байт", "МиБ",
+		"Главная", "Помощь", "1 байт", "МиБ",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ru view missing %q\n%s", want, view)

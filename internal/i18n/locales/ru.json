@@ -35,7 +35,7 @@
     "pane.consoles": "Консоли",
     "pane.games": "Игры",
     "pane.meta": "Метаданные",
-    "row.all": "Все консоли",
+    "row.all": "Главная",
     "row.unknown": "Неизвестно",
     "games.title.all": "Игры (%d)",
     "games.title.filter": "Игры - %s (%d)",

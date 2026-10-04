@@ -35,7 +35,7 @@
     "pane.consoles": "Consoles",
     "pane.games": "Games",
     "pane.meta": "Metadata",
-    "row.all": "All consoles",
+    "row.all": "Home",
     "row.unknown": "Unknown",
     "games.title.all": "Games (%d)",
     "games.title.filter": "Games - %s (%d)",
