@@ -355,18 +355,25 @@ type shelfKind int
 
 const (
 	shelfGame shelfKind = iota
-	shelfHeader
 	shelfBlank
 	shelfHint
 )
 
-// shelfRow is one rendered row of the games pane: a section header, a
-// single blank separator between sections, a dim hint under an empty
-// section, or a game (game indexes m.filtered).
+// shelfSection ids tag game and hint rows with their shelf block.
+const (
+	secRecent    = "recent"
+	secFavorites = "favorites"
+	secAll       = "all"
+)
+
+// shelfRow is one rendered row of the games pane: a single blank
+// separator between blocks, a dim hint under an empty section, or a
+// game (game indexes m.filtered, section names its block).
 type shelfRow struct {
-	kind  shelfKind
-	label string
-	game  int
+	kind    shelfKind
+	label   string
+	game    int
+	section string
 }
 
 // recentLimit caps how many played games top the shelf.
@@ -468,10 +475,11 @@ func (m *Model) refilter() {
 	m.refreshMeta()
 }
 
-// buildShelf renders section rows for filtered games already appended to
-// m.filtered in shelf order (recent, favorites, rest). game indexes the
-// flat filtered list, so it is just a running counter here. Outside the
-// All view (shelfOn=false) it is a plain game list with no sections.
+// buildShelf renders display rows for filtered games already appended to
+// m.filtered in shelf order (recent, favorites, rest). Sections live
+// only in the pane title with single blank separators between blocks,
+// so rows just carry their section id. Outside the All view
+// (shelfOn=false) it is a plain game list with no sections.
 func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered bool) []shelfRow {
 	rows := m.shelf[:0]
 	game := 0
@@ -482,39 +490,48 @@ func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered
 		}
 		return rows
 	}
-	section := func(labelKey, hintKey string, list []rom.Game) {
+	block := func(sec, hintKey string, list []rom.Game) {
 		if len(list) == 0 && filtered {
 			return // querying: empty sections vanish entirely
 		}
 		if len(rows) > 0 {
 			rows = append(rows, shelfRow{kind: shelfBlank})
 		}
-		rows = append(rows, shelfRow{kind: shelfHeader, label: i18n.T(labelKey)})
 		if len(list) == 0 {
 			if !filtered {
-				rows = append(rows, shelfRow{kind: shelfHint, label: i18n.T(hintKey)})
+				rows = append(rows, shelfRow{kind: shelfHint, label: i18n.T(hintKey), section: sec})
 			}
 			return
 		}
 		for range list {
-			rows = append(rows, shelfRow{kind: shelfGame, game: game})
+			rows = append(rows, shelfRow{kind: shelfGame, game: game, section: sec})
 			game++
 		}
 	}
-	section("home.recent", "home.empty.recent", recent)
-	section("home.favorites", "home.empty.favorites", favs)
-	if len(rest) == 0 {
-		return rows
-	}
-	if len(rows) > 0 {
-		rows = append(rows, shelfRow{kind: shelfBlank})
-	}
-	rows = append(rows, shelfRow{kind: shelfHeader, label: i18n.T("shelf.all")})
-	for range rest {
-		rows = append(rows, shelfRow{kind: shelfGame, game: game})
-		game++
+	block(secRecent, "home.empty.recent", recent)
+	block(secFavorites, "home.empty.favorites", favs)
+	if len(rest) > 0 {
+		if len(rows) > 0 {
+			rows = append(rows, shelfRow{kind: shelfBlank})
+		}
+		for range rest {
+			rows = append(rows, shelfRow{kind: shelfGame, game: game, section: secAll})
+			game++
+		}
 	}
 	return rows
+}
+
+// sectionLabel renders a shelf section id for the pane title.
+func sectionLabel(sec string) string {
+	switch sec {
+	case secRecent:
+		return i18n.T("home.recent")
+	case secFavorites:
+		return i18n.T("home.favorites")
+	default:
+		return i18n.T("shelf.all")
+	}
 }
 
 // shelfPos maps the game cursor onto its display row (game indexes are
@@ -529,24 +546,17 @@ func (m Model) shelfPos() int {
 }
 
 // topSection returns the section owning the top of the window: the
-// first non-blank row names it (headers name themselves, games and
-// hints resolve to the header above). A blank top row belongs to the
-// section below it. Flat category lists have no sections at all.
+// first non-blank row names it. A blank top row belongs to the section
+// below it. Flat category lists carry no sections at all.
 func (m Model) topSection(start, end int) (string, bool) {
 	for i := start; i < end && i < len(m.shelf); i++ {
-		switch m.shelf[i].kind {
-		case shelfHeader:
-			return m.shelf[i].label, true
-		case shelfBlank:
+		if m.shelf[i].kind == shelfBlank {
 			continue
-		default:
-			for j := i; j >= 0; j-- {
-				if m.shelf[j].kind == shelfHeader {
-					return m.shelf[j].label, true
-				}
-			}
-			return "", false
 		}
+		if m.shelf[i].section != "" {
+			return sectionLabel(m.shelf[i].section), true
+		}
+		return "", false
 	}
 	return "", false
 }
@@ -1535,8 +1545,6 @@ func (m Model) renderGames(w int) string {
 	for i := start; i < end; i++ {
 		row := m.shelf[i]
 		switch row.kind {
-		case shelfHeader:
-			lines = append(lines, titleDim.Render(fit("  "+truncate(row.label, w-2), w)))
 		case shelfBlank:
 			lines = append(lines, "")
 		case shelfHint:

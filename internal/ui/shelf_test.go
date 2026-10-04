@@ -23,15 +23,13 @@ func shelfModel(t *testing.T, opts ...Option) Model {
 	return sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json", args...))
 }
 
-// shelfTitles returns the display rows of the games pane: headers in
-// brackets, games plain, blanks as "".
+// shelfTitles returns the display rows of the games pane: games plain,
+// blanks as "".
 func shelfTitles(t *testing.T, m Model) []string {
 	t.Helper()
 	var out []string
 	for _, r := range m.shelf {
 		switch r.kind {
-		case shelfHeader:
-			out = append(out, "["+r.label+"]")
 		case shelfBlank:
 			out = append(out, "")
 		case shelfHint:
@@ -69,15 +67,8 @@ func TestShelfSectionsOrder(t *testing.T) {
 	m := shelfModel(t, WithFavorites(fav), WithPlaytime(play))
 	got := shelfTitles(t, m)
 	// Recent: Battletoads. Favorites (not in recent): Kirby.
-	// Rest: Battletoads is played but not favorited... wait, Battletoads
-	// is recent, so the rest holds Battletoads? No: dedup puts it once.
-	// Rest: nothing? Kirby is fav, Battletoads recent → rest holds both?
-	// No: rest = neither recent nor fav. Battletoads is recent, Kirby is
-	// fav → rest is empty → no trailing blank.
-	want := []string{
-		"[Recent]", "Battletoads", "",
-		"[Favorites]", "Kirby Mirror",
-	}
+	// Rest is empty. No headers in the list: sections live in the title.
+	want := []string{"Battletoads", "", "Kirby Mirror"}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
 	}
@@ -98,12 +89,10 @@ func TestShelfDedupAndFavMark(t *testing.T) {
 	m := shelfModel(t, WithFavorites(fav), WithPlaytime(play))
 	got := shelfTitles(t, m)
 	// Recent newest-first: Kirby, Battletoads. Fav section: Battletoads
-	// is already above, so only... wait Battletoads IS favorited but shown
-	// in recent → fav section lists favs not in recent → empty → hint.
-	// Rest: nothing left (both games placed).
+	// is already above, so only its hint shows. Rest is empty.
 	want := []string{
-		"[Recent]", "Kirby Mirror", "Battletoads", "",
-		"[Favorites]", "hint:No favorites yet - press f on a game",
+		"Kirby Mirror", "Battletoads", "",
+		"hint:No favorites yet - press f on a game",
 	}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
@@ -118,9 +107,9 @@ func TestShelfEmptyHints(t *testing.T) {
 	m := shelfModel(t)
 	got := shelfTitles(t, m)
 	want := []string{
-		"[Recent]", "hint:No recent games yet - launch something with x", "",
-		"[Favorites]", "hint:No favorites yet - press f on a game", "",
-		"[All games]", "Battletoads", "Kirby Mirror",
+		"hint:No recent games yet - launch something with x", "",
+		"hint:No favorites yet - press f on a game", "",
+		"Battletoads", "Kirby Mirror",
 	}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
@@ -135,7 +124,7 @@ func TestShelfNavigationSkipsDecor(t *testing.T) {
 	fav.Add("bbb222")
 	m := shelfModel(t, WithFavorites(fav))
 	m.focus = PaneGames
-	// Shelf: [Recent][hint][blank][Favorites][Kirby][blank][Battletoads][Kirby].
+	// Shelf rows: hint, blank, Kirby, blank, Battletoads.
 	// Cursor starts on the first game row (Kirby, idx 0).
 	if got := m.selected(); got == nil || got.Title != "Kirby Mirror" {
 		t.Fatalf("cursor must start on first game, got %+v", got)
@@ -169,9 +158,9 @@ func TestShelfToggleMovesSections(t *testing.T) {
 	}
 	got := shelfTitles(t, m)
 	want := []string{
-		"[Recent]", "hint:No recent games yet - launch something with x", "",
-		"[Favorites]", "Battletoads", "",
-		"[All games]", "Kirby Mirror",
+		"hint:No recent games yet - launch something with x", "",
+		"Battletoads", "",
+		"Kirby Mirror",
 	}
 	if !equalStrings(got, want) {
 		t.Fatalf("shelf =\n%q\nwant\n%q", got, want)
@@ -207,10 +196,10 @@ func TestShelfSearchFlattens(t *testing.T) {
 	if len(m.filtered) != 1 {
 		t.Fatalf("search must filter: %+v", m.filtered)
 	}
-	// The matching section keeps its header; empty sections vanish,
+	// Sections show in the title only; empty sections vanish,
 	// so there are no blanks or hints.
 	got := shelfTitles(t, m)
-	want := []string{"[Favorites]", "Kirby Mirror"}
+	want := []string{"Kirby Mirror"}
 	if !equalStrings(got, want) {
 		t.Fatalf("search shelf = %q", got)
 	}
@@ -316,8 +305,7 @@ func TestShelfSevenGamesLimit(t *testing.T) {
 }
 
 // shelfScrollModel builds a 40-game shelf that scrolls at 120x30:
-// RecentH + 5 played + blank + FavH + 1 fav + blank + AllH + 34 rest
-// (45 rows, 26 visible).
+// 5 played + blank + 1 fav + blank + 34 rest (42 rows, 26 visible).
 func shelfScrollModel(t *testing.T) Model {
 	t.Helper()
 	i18n.Set(i18n.En)
@@ -345,7 +333,7 @@ func shelfScrollModel(t *testing.T) Model {
 	m := sizedModel(t, New(games, "/x", "/tmp/lib.json",
 		WithFavorites(fav), WithPlaytime(play)))
 	m.focus = PaneGames
-	if len(m.shelf) != 45 {
+	if len(m.shelf) != 42 {
 		t.Fatalf("fixture must scroll: %d rows", len(m.shelf))
 	}
 	return m
@@ -398,7 +386,7 @@ func TestShelfTitleTopShowsSection(t *testing.T) {
 
 func TestShelfTitleBlankTop(t *testing.T) {
 	m := shelfScrollModel(t)
-	m.gameCur = 17 // window opens exactly on the blank before All games
+	m.gameCur = 18 // window opens exactly on the blank before the rest
 	lines := viewLines(m.View())
 	// A blank top row belongs to the section below it.
 	if !strings.Contains(lines[1], "All games") {
