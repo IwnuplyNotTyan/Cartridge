@@ -357,7 +357,14 @@ const (
 	shelfGame shelfKind = iota
 	shelfBlank
 	shelfHint
+	shelfHeader
 )
+
+// stickyDelay — на сколько строк запаздывает липкая шапка:
+// новый раздел захватывает заголовок, только когда топ ушёл на
+// столько строк past его первой строки. Разделитель-пустышка
+// относится к секции сверху.
+const stickyDelay = 1
 
 // shelfSection ids tag game and hint rows with their shelf block.
 const (
@@ -367,11 +374,12 @@ const (
 )
 
 // shelfRow is one rendered row of the games pane: a single blank
-// separator between blocks, a dim hint under an empty section, or a
+// separator between blocks, a section header ("Recent", "Favorites",
+// "All games"), a dim hint under an empty section, or a
 // game (game indexes m.filtered, section names its block).
 type shelfRow struct {
 	kind    shelfKind
-	label   string
+	label   string // header text or hint text
 	game    int
 	section string
 }
@@ -476,9 +484,12 @@ func (m *Model) refilter() {
 }
 
 // buildShelf renders display rows for filtered games already appended to
-// m.filtered in shelf order (recent, favorites, rest). Sections live
-// only in the pane title with single blank separators between blocks,
-// so rows just carry their section id. Outside the All view
+// m.filtered in shelf order (recent, favorites, rest). Every block after
+// the first starts with its header row ("Favorites", "All games", ...),
+// blocks are split by a single blank line. The very first block has no
+// header: the sticky pane title already names it, so it would only
+// duplicate. While filtering the pane title shows the query instead,
+// so headers stay on every block. Outside the All view
 // (shelfOn=false) it is a plain game list with no sections.
 func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered bool) []shelfRow {
 	rows := m.shelf[:0]
@@ -490,6 +501,7 @@ func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered
 		}
 		return rows
 	}
+	first := true
 	block := func(sec, hintKey string, list []rom.Game) {
 		if len(list) == 0 && filtered {
 			return // querying: empty sections vanish entirely
@@ -497,6 +509,12 @@ func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered
 		if len(rows) > 0 {
 			rows = append(rows, shelfRow{kind: shelfBlank})
 		}
+		// First block: no inline header, the sticky title covers it.
+		// While filtering the title shows the query, so keep headers.
+		if filtered || !first {
+			rows = append(rows, shelfRow{kind: shelfHeader, label: sectionLabel(sec), section: sec})
+		}
+		first = false
 		if len(list) == 0 {
 			if !filtered {
 				rows = append(rows, shelfRow{kind: shelfHint, label: i18n.T(hintKey), section: sec})
@@ -514,6 +532,10 @@ func (m *Model) buildShelf(shelfOn bool, recent, favs, rest []rom.Game, filtered
 		if len(rows) > 0 {
 			rows = append(rows, shelfRow{kind: shelfBlank})
 		}
+		if filtered || !first {
+			rows = append(rows, shelfRow{kind: shelfHeader, label: sectionLabel(secAll), section: secAll})
+		}
+		first = false
 		for range rest {
 			rows = append(rows, shelfRow{kind: shelfGame, game: game, section: secAll})
 			game++
@@ -545,20 +567,62 @@ func (m Model) shelfPos() int {
 	return 0
 }
 
-// topSection returns the section owning the top of the window: the
-// first non-blank row names it. A blank top row belongs to the section
-// below it. Flat category lists carry no sections at all.
+// topSection returns the sticky pane title for the window [start, end):
+// the section owning its top, but with a stickyDelay hysteresis AFTER
+// the boundary: a new section takes over only when the top has moved
+// stickyDelay rows past its first row. A blank separator belongs to
+// the section above it, so the title never flips before the header.
+// Flat category lists carry no sections at all.
 func (m Model) topSection(start, end int) (string, bool) {
-	for i := start; i < end && i < len(m.shelf); i++ {
-		if m.shelf[i].kind == shelfBlank {
-			continue
-		}
-		if m.shelf[i].section != "" {
-			return sectionLabel(m.shelf[i].section), true
-		}
+	if len(m.shelf) == 0 {
 		return "", false
 	}
-	return "", false
+	if start < 0 {
+		start = 0
+	}
+	if end > len(m.shelf) {
+		end = len(m.shelf)
+	}
+	if start >= len(m.shelf) || start >= end {
+		return "", false
+	}
+	// secAt resolves a row to its section: blanks belong to the section
+	// above (trailing separator), never to the one below.
+	secAt := func(i int) string {
+		for j := i; j >= 0; j-- {
+			if m.shelf[j].kind == shelfBlank {
+				continue
+			}
+			return m.shelf[j].section
+		}
+		for j := i + 1; j < len(m.shelf); j++ {
+			if m.shelf[j].kind == shelfBlank {
+				continue
+			}
+			return m.shelf[j].section
+		}
+		return ""
+	}
+	cur := secAt(start)
+	if cur == "" {
+		return "", false
+	}
+	// First row of the current block.
+	boundary := start
+	for boundary > 0 && secAt(boundary-1) == cur {
+		boundary--
+	}
+	var prev string
+	if boundary > 0 {
+		prev = secAt(boundary - 1)
+	}
+	if prev == "" || prev == cur {
+		return sectionLabel(cur), true
+	}
+	if start-boundary < stickyDelay {
+		return sectionLabel(prev), true
+	}
+	return sectionLabel(cur), true
 }
 
 func (m Model) selected() *rom.Game {
@@ -1533,9 +1597,9 @@ func (m Model) renderGames(w int) string {
 	pos := m.shelfPos()
 	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
 	end := min(start+visible, len(m.shelf))
-	// The pane title always names the topmost visible section, so the
-	// shelf reads even without scrolling; the search filter wins while
-	// querying. Flat category lists keep the plain title.
+	// The pane title sticks to the topmost visible section with a 2-row
+	// delay, so it does not flicker on every boundary; the search filter
+	// wins while querying. Flat category lists keep the plain title.
 	if q := strings.TrimSpace(m.activeQuery()); q != "" {
 		title = i18n.T("games.title.search", q, len(m.filtered))
 	} else if label, ok := m.topSection(start, end); ok {
@@ -1547,6 +1611,8 @@ func (m Model) renderGames(w int) string {
 		switch row.kind {
 		case shelfBlank:
 			lines = append(lines, "")
+		case shelfHeader:
+			lines = append(lines, titleDim.Render(fit(truncate(row.label, w), w)))
 		case shelfHint:
 			lines = append(lines, infoStyle.Render(fit("  "+truncate(row.label, w-2), w)))
 		default:
