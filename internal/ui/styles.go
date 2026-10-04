@@ -37,6 +37,8 @@ var (
 	pathIdle    = lipgloss.NewStyle().Foreground(dimText).Italic(true)
 	selStyle    = lipgloss.NewStyle().Background(accent).Foreground(tone(charmtone.Butter)).Bold(true)
 	curStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	langActive  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+	langIdle    = lipgloss.NewStyle().Foreground(dimText).Italic(true)
 	metaKey     = lipgloss.NewStyle().Foreground(dimText).Width(metaKeyWidth)
 	metaVal     = lipgloss.NewStyle().Foreground(brightTx)
 	metaID      = lipgloss.NewStyle().Foreground(idColor).Bold(true)

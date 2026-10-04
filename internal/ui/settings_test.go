@@ -398,6 +398,33 @@ func TestSettingsLanguageApplies(t *testing.T) {
 	}
 }
 
+func TestSettingsLangSelectedStyle(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabLang
+	m.langRaw = "ru" // active language: Русский
+	m.settCur = 0    // cursor on Auto
+	lines := m.renderLangTab(40)
+	if len(lines) != 3 {
+		t.Fatalf("lang tab must list 3 options, got %d", len(lines))
+	}
+	// Selected language: bold white, no background.
+	if want := "  " + langActive.Render("Русский"); lines[2] != want {
+		t.Fatalf("active language row = %q, want %q", lines[2], want)
+	}
+	if strings.Contains(lines[2], "48;") {
+		t.Fatalf("active language must have no background: %q", lines[2])
+	}
+	// The rest: grey italic.
+	if want := "  " + langIdle.Render("English"); lines[1] != want {
+		t.Fatalf("idle language row = %q, want %q", lines[1], want)
+	}
+	// Cursor row keeps the navigation highlight.
+	if !strings.Contains(lines[0], "> ") {
+		t.Fatalf("cursor row must keep the marker: %q", lines[0])
+	}
+}
+
 func TestSettingsPathsEditSaves(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabPaths

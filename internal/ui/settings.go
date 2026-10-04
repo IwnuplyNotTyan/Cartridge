@@ -914,13 +914,17 @@ func (m Model) renderLangTab(w int) []string {
 	cur := m.langCur()
 	for i, opt := range langOptions() {
 		label := opt[1]
-		plain := fit("  "+truncate(label, w-2), w)
-		if i == m.settCur {
-			plain = styledRow(plain)
-		} else if i == cur {
-			plain = "  " + selStyle.Render(truncate(label, w-2))
+		var plain string
+		switch {
+		case i == m.settCur:
+			plain = styledRow(fit("  "+truncate(label, w-2), w))
+		case i == cur:
+			// The active language: bold white, no background.
+			plain = "  " + langActive.Render(truncate(label, w-2))
+		default:
+			// Everything else: grey italic.
+			plain = "  " + langIdle.Render(truncate(label, w-2))
 		}
-		_ = opt
 		lines = append(lines, plain)
 	}
 	return lines
