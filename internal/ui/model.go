@@ -108,24 +108,13 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	}
 }
 
-// ConsoleRow is one entry of the left column. Besides consoles it holds
-// two pinned rows on top: favorites ("favorites") and recent games
-// ("recent"); "all" is the full library.
+// ConsoleRow is one entry of the left column.
 type ConsoleRow struct {
 	ID    string
 	Name  string
 	Short string
 	Count int
 }
-
-// Pinned row IDs and the recent section size.
-const (
-	rowFavorites = "favorites"
-	rowRecent    = "recent"
-	rowAll       = "all"
-
-	recentLimit = 5
-)
 
 // metaRow is one navigable metadata row: copy holds the clipboard text,
 // kind is "recipe"/"core" on switchable rows, "cheats" on the summary row,
@@ -153,6 +142,7 @@ type Model struct {
 	consCur  int
 	gameCur  int
 	filtered []rom.Game
+	shelf    []shelfRow // games pane display rows (headers, blanks, games)
 	// Search state: query is the committed filter (session-only),
 	// searching + searchBuf is the live input line above the info bar.
 	query     string
@@ -323,18 +313,6 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 		m.langRaw = "auto"
 	}
 	m.setGames(games)
-	// Start on the favorites shelf when it has games, else the library:
-	// the pinned rows are always visible, but an empty shelf is a poor
-	// landing page. Rescans keep the user's own position (see setGames).
-	if m.favCount() == 0 {
-		for i, r := range m.rows {
-			if r.ID == rowAll {
-				m.consCur = i
-				break
-			}
-		}
-		m.refilter()
-	}
 	return m
 }
 
@@ -355,13 +333,7 @@ func (m *Model) setGames(games []rom.Game) {
 		counts[g.ConsoleID]++
 		names[g.ConsoleID] = g.ConsoleName
 	}
-	// Pinned rows always sit on top: favorites first (the startup shelf),
-	// then recent, then the full library.
-	m.rows = []ConsoleRow{
-		{ID: rowFavorites, Name: "★ " + i18n.T("home.favorites"), Short: "★", Count: m.favCount()},
-		{ID: rowRecent, Name: i18n.T("home.recent"), Short: "…", Count: len(m.recentGames())},
-		{ID: rowAll, Name: i18n.T("row.all"), Count: len(games)},
-	}
+	m.rows = []ConsoleRow{{ID: "all", Name: i18n.T("row.all"), Count: len(games)}}
 	for _, c := range rom.Consoles {
 		if n, ok := counts[c.ID]; ok {
 			m.rows = append(m.rows, ConsoleRow{ID: c.ID, Name: c.Name, Short: c.Short, Count: n})
@@ -378,74 +350,30 @@ func (m *Model) setGames(games []rom.Game) {
 	m.refilter()
 }
 
-// favCount counts favorited games in the current library.
-func (m Model) favCount() int {
-	n := 0
-	for _, g := range m.games {
-		if m.favorites.Has(g.ID) {
-			n++
-		}
-	}
-	return n
+// shelfKind is one rendered row of the games pane.
+type shelfKind int
+
+const (
+	shelfGame shelfKind = iota
+	shelfHeader
+	shelfBlank
+	shelfHint
+)
+
+// shelfRow is one rendered row of the games pane: a section header, a
+// single blank separator between sections, a dim hint under an empty
+// section, or a game (game indexes m.filtered).
+type shelfRow struct {
+	kind  shelfKind
+	label string
+	game  int
 }
 
-// recentGames returns up to recentLimit played games, newest first.
-func (m Model) recentGames() []rom.Game {
-	type played struct {
-		g  rom.Game
-		at int64 // unix nano, -1 when unknown
-	}
-	var list []played
-	for _, g := range m.games {
-		at := int64(-1)
-		if m.play != nil {
-			if st, ok := m.play.Get(g.ID); ok {
-				at = st.LastPlayed.UnixNano()
-			}
-		}
-		if at >= 0 {
-			list = append(list, played{g, at})
-		}
-	}
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].at == list[j].at {
-			return list[i].g.ID < list[j].g.ID
-		}
-		return list[i].at > list[j].at
-	})
-	if len(list) > recentLimit {
-		list = list[:recentLimit]
-	}
-	out := make([]rom.Game, 0, len(list))
-	for _, p := range list {
-		out = append(out, p.g)
-	}
-	return out
-}
-
-// refreshRowCounts recomputes every sidebar counter in place without
-// touching cursors, so toggling a favorite updates counts instantly.
-func (m *Model) refreshRowCounts() {
-	counts := map[string]int{}
-	for _, g := range m.games {
-		counts[g.ConsoleID]++
-	}
-	for i, r := range m.rows {
-		switch r.ID {
-		case rowFavorites:
-			m.rows[i].Count = m.favCount()
-		case rowRecent:
-			m.rows[i].Count = len(m.recentGames())
-		case rowAll:
-			m.rows[i].Count = len(m.games)
-		default:
-			m.rows[i].Count = counts[r.ID]
-		}
-	}
-}
+// recentLimit caps how many played games top the shelf.
+const recentLimit = 5
 
 func (m *Model) refilter() {
-	id := rowAll
+	id := "all"
 	if m.consCur < len(m.rows) {
 		id = m.rows[m.consCur].ID
 	}
@@ -454,31 +382,78 @@ func (m *Model) refilter() {
 		q = string(m.searchBuf)
 	}
 	q = strings.ToLower(strings.TrimSpace(q))
-	// Scope first: favorites, recent (newest first, capped) or a console.
 	var scoped []rom.Game
-	switch id {
-	case rowFavorites:
-		for _, g := range m.games {
-			if m.favorites.Has(g.ID) {
-				scoped = append(scoped, g)
-			}
+	for _, g := range m.games {
+		if id != "all" && g.ConsoleID != id {
+			continue
 		}
-	case rowRecent:
-		scoped = m.recentGames()
-	default:
-		for _, g := range m.games {
-			if id == rowAll || g.ConsoleID == id {
-				scoped = append(scoped, g)
-			}
-		}
-	}
-	m.filtered = m.filtered[:0]
-	for _, g := range scoped {
 		if q != "" && !strings.Contains(strings.ToLower(g.Title), q) {
 			continue
 		}
+		scoped = append(scoped, g)
+	}
+	// Shelf order, each game shown once: recent (newest first, capped),
+	// then favorites, then the rest.
+	played := map[string]int64{}
+	if m.play != nil {
+		for _, g := range scoped {
+			if st, ok := m.play.Get(g.ID); ok {
+				played[g.ID] = st.LastPlayed.UnixNano()
+			}
+		}
+	}
+	var recent, favs, rest []rom.Game
+	inShelf := map[string]bool{}
+	if len(played) > 0 {
+		type playedGame struct {
+			g  rom.Game
+			at int64
+		}
+		var pl []playedGame
+		for _, g := range scoped {
+			if at, ok := played[g.ID]; ok {
+				pl = append(pl, playedGame{g, at})
+			}
+		}
+		sort.Slice(pl, func(i, j int) bool {
+			if pl[i].at == pl[j].at {
+				return pl[i].g.ID < pl[j].g.ID
+			}
+			return pl[i].at > pl[j].at
+		})
+		for i, p := range pl {
+			if i >= recentLimit {
+				break
+			}
+			recent = append(recent, p.g)
+			inShelf[p.g.ID] = true
+		}
+	}
+	for _, g := range scoped {
+		if inShelf[g.ID] {
+			continue
+		}
+		if m.favorites.Has(g.ID) {
+			favs = append(favs, g)
+		} else {
+			rest = append(rest, g)
+		}
+		inShelf[g.ID] = true
+	}
+	m.filtered = m.filtered[:0]
+	for _, g := range recent {
 		m.filtered = append(m.filtered, g)
 	}
+	for _, g := range favs {
+		m.filtered = append(m.filtered, g)
+	}
+	for _, g := range rest {
+		m.filtered = append(m.filtered, g)
+	}
+	// Display rows: a header per special section (a hint when it is empty
+	// and nothing filters), single blank lines between blocks.
+	// The rest needs no header: the pane title already covers it.
+	m.shelf = m.buildShelf(recent, favs, rest, q != "")
 	if m.gameCur >= len(m.filtered) {
 		m.gameCur = max(len(m.filtered)-1, 0)
 	}
@@ -486,6 +461,56 @@ func (m *Model) refilter() {
 	m.cheatsOpen = false
 	m.modsOpen = false
 	m.refreshMeta()
+}
+
+// buildShelf renders section rows for filtered games already appended to
+// m.filtered in shelf order (recent, favorites, rest). game indexes the
+// flat filtered list, so it is just a running counter here.
+func (m *Model) buildShelf(recent, favs, rest []rom.Game, filtered bool) []shelfRow {
+	rows := m.shelf[:0]
+	game := 0
+	section := func(labelKey, hintKey string, list []rom.Game) {
+		if len(list) == 0 && filtered {
+			return // querying: empty sections vanish entirely
+		}
+		if len(rows) > 0 {
+			rows = append(rows, shelfRow{kind: shelfBlank})
+		}
+		rows = append(rows, shelfRow{kind: shelfHeader, label: i18n.T(labelKey)})
+		if len(list) == 0 {
+			if !filtered {
+				rows = append(rows, shelfRow{kind: shelfHint, label: i18n.T(hintKey)})
+			}
+			return
+		}
+		for range list {
+			rows = append(rows, shelfRow{kind: shelfGame, game: game})
+			game++
+		}
+	}
+	section("home.recent", "home.empty.recent", recent)
+	section("home.favorites", "home.empty.favorites", favs)
+	if len(rest) > 0 {
+		if len(rows) > 0 {
+			rows = append(rows, shelfRow{kind: shelfBlank})
+		}
+		for range rest {
+			rows = append(rows, shelfRow{kind: shelfGame, game: game})
+			game++
+		}
+	}
+	return rows
+}
+
+// shelfPos maps the game cursor onto its display row (game indexes are
+// unique: every game shows once).
+func (m Model) shelfPos() int {
+	for i, r := range m.shelf {
+		if r.kind == shelfGame && r.game == m.gameCur {
+			return i
+		}
+	}
+	return 0
 }
 
 func (m Model) selected() *rom.Game {
@@ -814,13 +839,15 @@ func (m *Model) toggleSoftpatch() {
 }
 
 // toggleFavorite flips the favorite mark on the selected game and
-// persists it. Row counts refresh in place so the cursor never jumps.
+// persists it. The shelf rebuilds in place with the cursor kept on the
+// same game, which just moves sections.
 func (m *Model) toggleFavorite() {
 	g := m.selected()
 	if g == nil || m.favorites == nil {
 		return
 	}
-	if m.favorites.Toggle(g.ID) {
+	id := g.ID
+	if m.favorites.Toggle(id) {
 		m.status = i18n.T("status.fav.added", g.Title)
 	} else {
 		m.status = i18n.T("status.fav.removed", g.Title)
@@ -829,7 +856,13 @@ func (m *Model) toggleFavorite() {
 		m.status = i18n.T("status.save_fail", err)
 		return
 	}
-	m.refreshRowCounts()
+	m.refilter()
+	for i := range m.filtered {
+		if m.filtered[i].ID == id {
+			m.gameCur = i
+			break
+		}
+	}
 	m.refreshMeta()
 }
 
@@ -1432,14 +1465,8 @@ func (m Model) renderConsoles(w int) string {
 
 func (m Model) renderGames(w int) string {
 	title := i18n.T("games.title.all", len(m.filtered))
-	if m.consCur < len(m.rows) {
-		switch m.rows[m.consCur].ID {
-		case rowFavorites, rowRecent:
-			title = fmt.Sprintf("%s (%d)", m.rows[m.consCur].Name, len(m.filtered))
-		case rowAll:
-		default:
-			title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
-		}
+	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
+		title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
 	}
 	if q := strings.TrimSpace(m.activeQuery()); q != "" {
 		title = i18n.T("games.title.search", q, len(m.filtered))
@@ -1447,29 +1474,36 @@ func (m Model) renderGames(w int) string {
 	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
 	if len(m.filtered) == 0 {
 		empty := i18n.T("games.empty")
-		switch {
-		case strings.TrimSpace(m.activeQuery()) != "":
+		if strings.TrimSpace(m.activeQuery()) != "" {
 			empty = i18n.T("games.empty.search")
-		case m.consCur < len(m.rows) && m.rows[m.consCur].ID == rowFavorites:
-			empty = i18n.T("home.empty.favorites")
-		case m.consCur < len(m.rows) && m.rows[m.consCur].ID == rowRecent:
-			empty = i18n.T("home.empty.recent")
 		}
 		lines = append(lines, infoStyle.Render(fit(empty, w)))
 		return m.column(lines, w, 1, 1)
 	}
 	visible := max(m.bodyH()-1, 1)
-	start := clamp(m.gameCur-visible/2, 0, max(len(m.filtered)-visible, 0))
-	for i := start; i < min(start+visible, len(m.filtered)); i++ {
-		mark := ""
-		if m.favorites.Has(m.filtered[i].ID) {
-			mark = " ★"
+	pos := m.shelfPos()
+	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
+	for i := start; i < min(start+visible, len(m.shelf)); i++ {
+		row := m.shelf[i]
+		switch row.kind {
+		case shelfHeader:
+			lines = append(lines, titleDim.Render(fit("  "+truncate(row.label, w-2), w)))
+		case shelfBlank:
+			lines = append(lines, "")
+		case shelfHint:
+			lines = append(lines, infoStyle.Render(fit("  "+truncate(row.label, w-2), w)))
+		default:
+			g := m.filtered[row.game]
+			mark := ""
+			if m.favorites.Has(g.ID) {
+				mark = " ★"
+			}
+			plain := fit("  "+truncate(g.Title, w-2-lipgloss.Width(mark))+mark, w)
+			if row.game == m.gameCur {
+				plain = styledRow(plain)
+			}
+			lines = append(lines, plain)
 		}
-		plain := fit("  "+truncate(m.filtered[i].Title, w-2-lipgloss.Width(mark))+mark, w)
-		if i == m.gameCur {
-			plain = styledRow(plain)
-		}
-		lines = append(lines, plain)
 	}
 	return m.column(lines, w, 1, 1)
 }
