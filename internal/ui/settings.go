@@ -48,6 +48,7 @@ func pathEntries() []pathEntry {
 		{"sett.paths.recipes", func(m *Model) string { return m.recipesPath }, func(m *Model, v string) { m.recipesPath = v }},
 		{"sett.paths.patches", func(m *Model) string { return m.patchesPath }, func(m *Model, v string) { m.patchesPath = v }},
 		{"sett.paths.mods", func(m *Model) string { return m.modsDir }, func(m *Model, v string) { m.modsDir = v }},
+		{"sett.paths.patched", func(m *Model) string { return m.patchedDir }, func(m *Model, v string) { m.patchedDir = v }},
 		{"sett.paths.saves", func(m *Model) string { return m.savesDir }, func(m *Model, v string) { m.savesDir = v }},
 		{"sett.paths.cheats", func(m *Model) string { return m.cheatsDir }, func(m *Model, v string) { m.cheatsDir = v }},
 	}
@@ -161,6 +162,7 @@ func (m *Model) persistSettings() error {
 		Recipes:   m.recipesPath,
 		Patches:   m.patchesPath,
 		ModsDir:   m.modsDir,
+		Patched:   m.patchedDir,
 		SavesDir:  m.savesDir,
 		CheatsDir: m.cheatsDir,
 	}

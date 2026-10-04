@@ -136,16 +136,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	games, errs := rom.ScanDir(cfg.RomDir)
-	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.scan_warn", err))
-	}
-
 	stored, err := library.Load(cfg.Library)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cartridge: %v\n", err)
 		os.Exit(1)
 	}
+
+	// The stored library doubles as the scan cache: untouched files reuse
+	// their hashed entry instead of being re-read every start.
+	games, errs := rom.ScanDir(cfg.RomDir, stored)
+	for _, err := range errs {
+		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.scan_warn", err))
+	}
+
 	games = library.Merge(stored, games)
 	if err := library.Save(cfg.Library, games); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.save_fail", err))
@@ -164,6 +167,7 @@ func main() {
 		ui.WithBaseRecipes(base),
 		ui.WithPatches(patches),
 		ui.WithPaths(cfg.ConfigFile, cfg.Recipes, cfg.Patches, cfg.ModsDir, cfg.SavesDir, cfg.CheatsDir),
+		ui.WithPatchedDir(cfg.Patched),
 		ui.WithLangRaw(rawLang(*lang, cfg)),
 		ui.WithPlaytime(play),
 		ui.WithOverrides(over))

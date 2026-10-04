@@ -11,6 +11,7 @@ import (
 
 	"cartridge/internal/i18n"
 	"cartridge/internal/library"
+	"cartridge/internal/mods"
 )
 
 // Env vars consulted during resolution.
@@ -22,6 +23,7 @@ const (
 	EnvRecipes = "CARTRIDGE_RECIPES"
 	EnvPatches = "CARTRIDGE_PATCHES"
 	EnvMods    = "CARTRIDGE_MODS_DIR"
+	EnvPatched = "CARTRIDGE_PATCHED_DIR"
 	EnvSaves   = "CARTRIDGE_SAVES_DIR"
 	EnvCheats  = "CARTRIDGE_CHEATS_DIR"
 )
@@ -34,6 +36,7 @@ type File struct {
 	Recipes   string `json:"recipes"`
 	Patches   string `json:"patches,omitempty"`
 	ModsDir   string `json:"mods_dir,omitempty"`
+	Patched   string `json:"patched_dir,omitempty"`
 	SavesDir  string `json:"saves_dir,omitempty"`
 	CheatsDir string `json:"cheats_dir,omitempty"`
 }
@@ -46,6 +49,7 @@ type Config struct {
 	Recipes    string
 	Patches    string
 	ModsDir    string
+	Patched    string
 	SavesDir   string
 	CheatsDir  string
 	ConfigFile string // file actually read ("" when none)
@@ -87,6 +91,11 @@ func DefaultModsDir() string {
 	}
 	return filepath.Join(home, ".local", "share", "cartridge", "mods")
 }
+
+// DefaultPatchedDir returns the standard directory for hard-patched ROM
+// instances (one file per game+mod, outside the games dir so rescans
+// never pick them up as library games).
+func DefaultPatchedDir() string { return mods.DefaultPatchedDir() }
 
 // DefaultSavesDir returns the standard directory for saves/states.
 func DefaultSavesDir() string {
@@ -180,6 +189,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		Recipes:    expandPath(firstNonEmpty(recipesFlag, os.Getenv(EnvRecipes), f.Recipes, DefaultRecipesPath())),
 		Patches:    expandPath(firstNonEmpty(os.Getenv(EnvPatches), f.Patches, DefaultPatchesPath())),
 		ModsDir:    expandPath(firstNonEmpty(os.Getenv(EnvMods), f.ModsDir, DefaultModsDir())),
+		Patched:    expandPath(firstNonEmpty(os.Getenv(EnvPatched), f.Patched, DefaultPatchedDir())),
 		SavesDir:   expandPath(firstNonEmpty(os.Getenv(EnvSaves), f.SavesDir, DefaultSavesDir())),
 		CheatsDir:  expandPath(firstNonEmpty(os.Getenv(EnvCheats), f.CheatsDir, DefaultCheatsDir())),
 		ConfigFile: used,
@@ -238,6 +248,7 @@ func (c Config) ToFile() File {
 		Recipes:   c.Recipes,
 		Patches:   c.Patches,
 		ModsDir:   c.ModsDir,
+		Patched:   c.Patched,
 		SavesDir:  c.SavesDir,
 		CheatsDir: c.CheatsDir,
 	}

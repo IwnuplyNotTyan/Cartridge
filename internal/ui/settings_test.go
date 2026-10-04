@@ -455,6 +455,7 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 		"sett.paths.recipes": "Recipes",
 		"sett.paths.patches": "Patches",
 		"sett.paths.mods":    "Mods",
+		"sett.paths.patched": "Patched",
 		"sett.paths.saves":   "Saves",
 		"sett.paths.cheats":  "Cheats",
 	} {
@@ -465,7 +466,7 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabPaths
 	view := m.View()
-	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Saves:", "Cheats:"} {
+	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Patched:", "Saves:", "Cheats:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("paths tab must show label %q\n%s", want, view)
 		}

@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"cartridge/internal/cheats"
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
+	"cartridge/internal/mods"
 	"cartridge/internal/overrides"
 	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
@@ -52,6 +54,7 @@ type keyMap struct {
 	Launch   key.Binding
 	Settings key.Binding
 	Copy     key.Binding
+	Deploy   key.Binding
 	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
@@ -72,6 +75,7 @@ func newKeyMap() keyMap {
 		Launch:   key.NewBinding(key.WithKeys("x"), key.WithHelp("x", i18n.T("key.launch"))),
 		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", i18n.T("key.settings"))),
 		Copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", i18n.T("key.copy"))),
+		Deploy:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", i18n.T("key.deploy"))),
 		Alt:      key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", i18n.T("key.alt"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
@@ -92,7 +96,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
-		{k.Copy, k.Alt, k.Help, k.Quit},
+		{k.Copy, k.Deploy, k.Alt, k.Help, k.Quit},
 	}
 }
 
@@ -106,7 +110,9 @@ type ConsoleRow struct {
 
 // metaRow is one navigable metadata row: copy holds the clipboard text,
 // kind is "recipe"/"core" on switchable rows, "cheats" on the summary row,
-// "cheat" on one expanded cheat (cheat = its index), "sep" on separators.
+// "cheat" on one expanded cheat (cheat = its index), "mods" on the mods
+// summary row, "mod" on one expanded mod file (enter plays it via a
+// hard-patched instance, d toggles the softpatch copy), "sep" on separators.
 type metaRow struct {
 	kind  string
 	label string
@@ -142,9 +148,22 @@ type Model struct {
 	cheatFile    *cheats.File
 	cheatMissing bool
 	cheatsOpen   bool
-	keys         keyMap
-	help         help.Model
-	showHelp     bool
+	// Mod list state: cached files per game+recipe+dirs, expansion flag.
+	// modTarget maps a pile file to the exact deployed path RetroArch
+	// autopatches by (game stem + ext, numbered on collision);
+	// modActive marks slots whose bytes already sit in place.
+	modKey    string
+	modLive   string
+	modFiles  []mods.Mod
+	modTarget map[string]string
+	modActive map[string]bool
+	modBuilt  map[string]bool
+	modCheck  map[string]mods.Check
+	modStat   modCacheStat
+	modsOpen  bool
+	keys      keyMap
+	help      help.Model
+	showHelp  bool
 
 	width  int
 	height int
@@ -178,6 +197,7 @@ type Model struct {
 	recipesPath string
 	patchesPath string
 	modsDir     string
+	patchedDir  string
 	savesDir    string
 	cheatsDir   string
 	langRaw     string
@@ -233,6 +253,11 @@ func WithPaths(cfgFile, recipesPath, patchesPath, modsDir, savesDir, cheatsDir s
 	}
 }
 
+// WithPatchedDir sets where hard-patched ROM instances live.
+func WithPatchedDir(dir string) Option {
+	return func(m *Model) { m.patchedDir = dir }
+}
+
 // WithLangRaw remembers the raw language value from config ("auto"/"en"/"ru").
 func WithLangRaw(raw string) Option {
 	return func(m *Model) { m.langRaw = raw }
@@ -271,7 +296,16 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 }
 
 func (m *Model) setGames(games []rom.Game) {
-	m.games = games
+	// Drop stale rows that are not valid games (mod files, archive junk
+	// from older scans lingering in the library): a rescan cleans the
+	// view at once, without waiting for the next restart save.
+	filtered := make([]rom.Game, 0, len(games))
+	for _, g := range games {
+		if rom.ValidGame(g) {
+			filtered = append(filtered, g)
+		}
+	}
+	m.games = filtered
 	counts := map[string]int{}
 	names := map[string]string{}
 	for _, g := range games {
@@ -311,6 +345,7 @@ func (m *Model) refilter() {
 	}
 	m.metaCur = 0
 	m.cheatsOpen = false
+	m.modsOpen = false
 	m.refreshMeta()
 }
 
@@ -328,6 +363,7 @@ func (m *Model) selectGame(i int) {
 	m.gameCur = i
 	m.metaCur = 0
 	m.cheatsOpen = false
+	m.modsOpen = false
 	m.refreshMeta()
 }
 
@@ -346,6 +382,7 @@ func (m *Model) setFocus(p Pane) {
 
 func (m *Model) refreshMeta() {
 	m.syncCheatCache()
+	m.syncModCache()
 	m.metaRows = m.buildMetaRows()
 	m.metaCur = clampMetaCur(m.metaRows, m.metaCur)
 	content, starts := m.renderMetaRows()
@@ -503,11 +540,18 @@ func (m Model) metaCopy() (tea.Model, tea.Cmd) {
 }
 
 // metaSelect activates the cursor row: expands the cheat list, toggles
-// a cheat, copies anything else. It returns a Model value like the other
-// update paths, even though it mutates through a pointer.
+// a cheat, deploys a mod file beside the ROM, copies anything else.
+// It returns a Model value like the other update paths, even though it
+// mutates through a pointer.
 func (m *Model) metaSelect() (tea.Model, tea.Cmd) {
 	if m.metaCur >= 0 && m.metaCur < len(m.metaRows) {
 		switch m.metaRows[m.metaCur].kind {
+		case "mod":
+			return m.launchModSelected()
+		case "mods":
+			m.modsOpen = !m.modsOpen
+			m.refreshMeta()
+			return *m, nil
 		case "cheats":
 			if m.cheatsOpen {
 				m.cheatsOpen = false
@@ -533,6 +577,101 @@ func (m *Model) metaSelect() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.metaCopy()
+}
+
+// launchModSelected builds the hard-patched ROM instance for the cursor
+// mod file (reusing a fresh one) and starts the emulator on it, exactly
+// like a vanilla launch but with the copied game file. Works with any
+// emulator or core: no softpatch support needed on their side.
+func (m Model) launchModSelected() (tea.Model, tea.Cmd) {
+	if m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
+		return m, nil
+	}
+	row := m.metaRows[m.metaCur]
+	if row.kind != "mod" || strings.TrimSpace(row.copy) == "" {
+		return m, nil
+	}
+	src := row.copy
+	g := m.selected()
+	if g == nil {
+		return m, nil
+	}
+	game := *g
+	r := m.gameRecipe(game)
+	if r == nil {
+		m.status = i18n.T("status.no_recipe", game.Title)
+		return m, nil
+	}
+	instance, _, err := mods.EnsureInstance(m.patchedDir, game.ID, game.Path, game.Inner, src)
+	if err != nil {
+		m.status = i18n.T("status.launch_fail", err)
+		return m, nil
+	}
+	game.Path = instance
+	game.Inner = ""
+	cmd, err := m.launchCmd(game, r)
+	if err != nil {
+		m.status = i18n.T("status.launch_fail", err)
+		return m, nil
+	}
+	m.status = i18n.T("status.mod.launching", game.Title, filepath.Base(src))
+	m.modKey = "" // a fresh instance changes the [built] marks
+	m.refreshMeta()
+	start := time.Now()
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return launchDoneMsg{gameID: game.ID, dur: time.Since(start), err: err}
+	})
+}
+
+// toggleSoftpatch places the cursor mod file beside the ROM under the
+// exact name RetroArch autopatches by, or removes that copy when it is
+// already there. A deployed file with foreign bytes (hand-placed, not
+// ours) is reported and kept.
+func (m *Model) toggleSoftpatch() {
+	if m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
+		return
+	}
+	row := m.metaRows[m.metaCur]
+	if row.kind != "mod" || strings.TrimSpace(row.copy) == "" {
+		return
+	}
+	src := row.copy
+	g := m.selected()
+	if g == nil {
+		return
+	}
+	// Plan fresh at action time: the cache may predate a hand-placed
+	// file beside the ROM, and deploying over it would destroy foreign
+	// bytes. PlanDeploy never picks an occupied slot with different
+	// content, stacking to .ips1 instead.
+	ext := strings.ToLower(filepath.Ext(src))
+	dst, active := mods.PlanDeploy(src, g.Path, g.Inner, ext)
+	if !active {
+		chk := m.modCheck[src]
+		if err := mods.Deploy(src, dst); err != nil {
+			m.status = i18n.T("status.save_fail", err)
+			return
+		}
+		m.modKey = "" // deployed bytes sit outside the watched dirs: recollect
+		m.refreshMeta()
+		msg := i18n.T("status.mod.deployed", filepath.Base(dst))
+		if d := modCheckDetail(*g, chk); d != "" {
+			msg += " — " + d
+		}
+		m.status = msg
+		return
+	}
+	if err := mods.Undeploy(src, dst); err != nil {
+		if errors.Is(err, mods.ErrNotOurs) {
+			m.status = i18n.T("status.mod.not_ours", filepath.Base(dst))
+		} else {
+			m.status = i18n.T("status.save_fail", err)
+		}
+		return
+	}
+	m.modKey = ""
+	m.refreshMeta()
+	m.status = i18n.T("status.mod.removed", filepath.Base(dst))
 }
 
 // copyCmd writes text to the terminal clipboard via OSC52 (works over SSH;
@@ -729,9 +868,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFocus(PaneMeta)
 		return m, nil
 	case "esc":
-		// An expanded cheat list collapses first, like settings details.
-		if m.cheatsOpen {
+		// An expanded cheat/mod list collapses first, like settings details.
+		if m.cheatsOpen || m.modsOpen {
 			m.cheatsOpen = false
+			m.modsOpen = false
 			m.refreshMeta()
 			return m, nil
 		}
@@ -813,6 +953,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.metaEdge(true)
 		case key.Matches(msg, k.Copy):
 			return m.metaCopy()
+		case key.Matches(msg, k.Deploy):
+			m.toggleSoftpatch()
+			return m, nil
 		case key.Matches(msg, k.Select):
 			return m.metaSelect()
 		case key.Matches(msg, k.Rescan):
@@ -837,8 +980,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) rescanCmd() tea.Cmd {
 	dir := m.romDir
+	cache := m.games
 	return func() tea.Msg {
-		games, errs := rom.ScanDir(dir)
+		games, errs := rom.ScanDir(dir, cache)
 		return rescanMsg{games: games, errs: errs}
 	}
 }
@@ -1238,7 +1382,7 @@ func (m Model) buildMetaRows() []metaRow {
 		}
 		rows = append(rows, m.cheatsRows(*g, *r, vw)...)
 		rows = append(rows, kv(i18n.T("meta.achievements"), featText(r.Achievements.Supported, r.Achievements.Note, *g, r)))
-		rows = append(rows, kv(i18n.T("meta.mods"), featText(r.Mods.Supported, r.Mods.Path, *g, r)))
+		rows = append(rows, m.modsRows(*g, *r, vw)...)
 	} else {
 		rows = append(rows, metaRow{kind: "kv", label: i18n.T("meta.recipe"), lines: wrapSoft(i18n.T("recipe.none"), vw)})
 	}
@@ -1326,6 +1470,216 @@ func (m *Model) ensureCheatsOn() {
 		return
 	}
 	m.cheatStat = statCheatFile(m.cheatPath)
+}
+
+// modCacheStat is a cheap fingerprint of the mod sources for revalidation:
+// top-dir stats only, no directory walks. Every cursor move revalidates,
+// so this must stay O(1) — walking the trees here froze browsing.
+// The ROM dir is watched too, so a deployed (or hand-placed) file
+// beside the ROM refreshes the [active] marks without a game switch.
+// (A file added in a nested subfolder only changes that subfolder's
+// mtime and shows up on the next game switch; a file added at the top
+// level is picked up at once.)
+type modCacheStat struct {
+	liveMod time.Time
+	liveOk  bool
+	pileMod time.Time
+	pileOk  bool
+	romMod  time.Time
+	romOk   bool
+}
+
+// statModSources snapshots the live dir, the shared pile dir and the
+// ROM dir holding the deployed copies.
+func statModSources(live, pile, romDir string) modCacheStat {
+	var s modCacheStat
+	if strings.TrimSpace(live) != "" {
+		if st, err := os.Stat(live); err == nil {
+			s.liveMod, s.liveOk = st.ModTime(), true
+		}
+	}
+	if strings.TrimSpace(pile) != "" {
+		if st, err := os.Stat(pile); err == nil {
+			s.pileMod, s.pileOk = st.ModTime(), true
+		}
+	}
+	if strings.TrimSpace(romDir) != "" {
+		if st, err := os.Stat(romDir); err == nil {
+			s.romMod, s.romOk = st.ModTime(), true
+		}
+	}
+	return s
+}
+
+// syncModCache collects the selected game's mod files, keeping the result
+// while the inputs stay put. Sources are the recipe's mods dir (when it
+// exists) plus fuzzy matches from the shared mods dir. For every pile
+// file it also plans the exact deployed path RetroArch autopatches by
+// and whether those bytes already sit in place.
+func (m *Model) syncModCache() {
+	g := m.selected()
+	var r *emulate.Recipe
+	if g != nil {
+		r = m.gameRecipe(*g)
+	}
+	if g == nil || r == nil || !r.Mods.Supported {
+		m.modKey, m.modLive = "", ""
+		m.modFiles = nil
+		m.modTarget, m.modActive, m.modBuilt, m.modCheck = nil, nil, nil, nil
+		m.modStat = modCacheStat{}
+		return
+	}
+	src := g.ID + "\x00" + r.Name + "\x00" + r.Mods.Path + "\x00" + m.modsDir
+	romDir := filepath.Dir(g.Path)
+	if src == m.modKey {
+		if statModSources(m.modLive, m.modsDir, romDir) == m.modStat {
+			return
+		}
+	}
+	live, _ := m.resolveModPath(*g, *r)
+	files := m.collectMods(*g, live)
+	target := make(map[string]string, len(files))
+	active := make(map[string]bool, len(files))
+	built := make(map[string]bool, len(files))
+	check := make(map[string]mods.Check, len(files))
+	// Verification reads the ROM once per game switch and checks every
+	// pile file against it, so a doomed patch is marked before deploy.
+	var romBytes []byte
+	if len(files) > 0 {
+		romBytes, _ = mods.ReadROMBytes(g.Path, g.Inner)
+	}
+	for _, f := range files {
+		dst, ok := mods.PlanDeploy(f.Path, g.Path, g.Inner, f.Ext)
+		target[f.Path] = dst
+		active[f.Path] = ok
+		if romBytes != nil {
+			check[f.Path] = mods.VerifyPatch(f.Path, romBytes)
+		}
+		if dir := strings.TrimSpace(m.patchedDir); dir != "" {
+			_, built[f.Path] = mods.InstanceStatus(dir, g.ID, f.Path)
+		}
+	}
+	m.modKey, m.modLive, m.modFiles = src, live, files
+	m.modTarget, m.modActive, m.modBuilt, m.modCheck = target, active, built, check
+	m.modStat = statModSources(live, m.modsDir, romDir)
+}
+
+// resolveModPath expands the recipe's mods template. A template pointing
+// at an existing dir is the live dir; anything else (a missing path, a
+// file path, an empty template) is kept as the intended display path.
+func (m Model) resolveModPath(g rom.Game, r emulate.Recipe) (live string, searched bool) {
+	tmpl, _ := r.Expand(r.Mods.Path, g)
+	tmpl = strings.TrimSpace(tmpl)
+	if tmpl != "" {
+		if st, err := os.Stat(tmpl); err == nil && st.IsDir() {
+			return tmpl, false
+		}
+		if strings.TrimSpace(m.modsDir) == "" {
+			return tmpl, false
+		}
+		return tmpl, true
+	}
+	if dir := strings.TrimSpace(m.modsDir); dir != "" {
+		return "", true
+	}
+	return "", false
+}
+
+// collectMods merges the live dir content with fuzzy pile matches,
+// deduplicated by path.
+func (m Model) collectMods(g rom.Game, live string) []mods.Mod {
+	seen := map[string]bool{}
+	var out []mods.Mod
+	if live != "" {
+		if st, err := os.Stat(live); err == nil && st.IsDir() {
+			if files, err := mods.ListDir(live); err == nil {
+				for _, f := range files {
+					if !seen[f.Path] {
+						seen[f.Path] = true
+						out = append(out, f)
+					}
+				}
+			}
+		}
+	}
+	if dir := strings.TrimSpace(m.modsDir); dir != "" {
+		if hits, err := mods.Match(dir, modCandidates(g)...); err == nil {
+			for _, f := range hits {
+				if !seen[f.Path] {
+					seen[f.Path] = true
+					out = append(out, f)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// modCandidates orders file stems to match a game by: inner/ROM base
+// name, title, short id, full id (same order as cheats).
+func modCandidates(g rom.Game) []string {
+	return cheatCandidates(g)
+}
+
+// modsRows builds the mods summary row plus one row per patch file while
+// expanded. Each file shows its pile name and the exact deployed name
+// RetroArch autopatches by (game stem + ext), plus an [active] mark when
+// those bytes already sit beside the ROM. Enter deploys, d removes.
+func (m Model) modsRows(g rom.Game, r emulate.Recipe, vw int) []metaRow {
+	base := featText(r.Mods.Supported, r.Mods.Path, g, &r)
+	if !r.Mods.Supported {
+		return []metaRow{{kind: "mods", label: i18n.T("meta.mods"), lines: wrapSoft(base, vw), copy: base}}
+	}
+	if len(m.modFiles) == 0 {
+		base += " (" + i18n.T("meta.mods.nofile") + ")"
+	} else {
+		base += fmt.Sprintf(" (%d)", len(m.modFiles))
+	}
+	rows := []metaRow{{kind: "mods", label: i18n.T("meta.mods"), lines: wrapSoft(base, vw), copy: base}}
+	if m.modsOpen {
+		for i, f := range m.modFiles {
+			text := f.Name + " → " + filepath.Base(m.modTarget[f.Path])
+			if m.modActive[f.Path] {
+				text += " [" + i18n.T("meta.mods.active") + "]"
+			}
+			if m.modBuilt[f.Path] {
+				text += " [" + i18n.T("meta.mods.built") + "]"
+			}
+			if chk, ok := m.modCheck[f.Path]; ok {
+				switch chk.Kind {
+				case "base":
+					text += " [" + i18n.T("meta.mods.badbase") + "]"
+				case "broken":
+					text += " [" + i18n.T("meta.mods.badfile") + "]"
+				}
+			}
+			lines := wrapSoft(text, vw)
+			if d := modCheckDetail(g, m.modCheck[f.Path]); d != "" {
+				lines = append(lines, wrapSoft(d, vw)...)
+			}
+			rows = append(rows, metaRow{kind: "mod", lines: lines, copy: f.Path, cheat: i})
+		}
+	}
+	return rows
+}
+
+// modCheckDetail renders the second row line for a failed verification:
+// the technical mismatch plus an SMC-header hint on SNES ±512 bytes.
+func modCheckDetail(g rom.Game, chk mods.Check) string {
+	switch chk.Kind {
+	case "broken":
+		return chk.Note
+	case "base":
+		s := chk.Note
+		if g.ConsoleID == "snes" && chk.HasCRC {
+			if d := chk.WantSize - chk.GotSize; d == 512 || d == -512 {
+				s += " · " + i18n.T("meta.mods.header")
+			}
+		}
+		return s
+	default:
+		return ""
+	}
 }
 
 // altLabel names the active alternative among all matches: plain name when

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bytes"
 	"errors"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	rompatcher "github.com/olsonb97/RomPatcher.go"
 
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
@@ -962,4 +965,376 @@ func stripANSI(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// modTestModel builds a browser model whose nes recipe supports mods
+// with the shared pile dir.
+func modTestModel(t *testing.T, pileDir string) Model {
+	t.Helper()
+	i18n.Set(i18n.En)
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args: []string{"{rom}"},
+		Mods: emulate.Mods{Supported: true, Path: filepath.Join(t.TempDir(), "live-mods")}}
+	m := New(sampleGames(), "/x", "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}))
+	m.modsDir = pileDir
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m
+}
+
+func TestMetaModsExpand(t *testing.T) {
+	dir := t.TempDir()
+	// ROM base is "a" (/x/a.nes): the pile match wins by stem.
+	if err := os.WriteFile(filepath.Join(dir, "a.ips"), []byte("PATCH"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := modTestModel(t, dir)
+	m = metaCursorTo(t, m, "mods")
+	if got := metaRowText(t, m, "mods"); !strings.Contains(got, "(1)") {
+		t.Fatalf("mods row must show count, got %q", got)
+	}
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if !m.modsOpen {
+		t.Fatalf("enter must expand mods")
+	}
+	if view := m.View(); !strings.Contains(view, "a.ips") {
+		t.Fatalf("expanded mods must show file\n%s", view)
+	}
+	// Esc collapses the list.
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.modsOpen {
+		t.Fatalf("esc must collapse mods")
+	}
+}
+
+// modDeployModel builds a browser model over a real temp games dir so
+// instance builds actually touch the disk. The pile holds hack.ips for
+// the game game.nes; patched instances go to a temp dir.
+func modDeployModel(t *testing.T) (Model, string, string, string) {
+	t.Helper()
+	i18n.Set(i18n.En)
+	gamesDir := t.TempDir()
+	romPath := filepath.Join(gamesDir, "game.nes")
+	if err := os.WriteFile(romPath, bytes.Repeat([]byte{0xAB}, 64), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pile := t.TempDir()
+	src := filepath.Join(pile, "game", "hack.ips")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A valid IPS fitting the 64-byte ROM: no [bad base]/[bad file] marks.
+	writeIPSFile(t, src, 10, []byte("HELLO"))
+	games := []rom.Game{{
+		ID: "aaa111", Title: "game", ConsoleID: "nes",
+		ConsoleName: "Nintendo Entertainment System", Path: romPath,
+		SHA256: "aaa111",
+	}}
+	r := emulate.Recipe{Name: "ra-nes", Consoles: []string{"nes"}, Emulator: "e1",
+		Args: []string{"{rom}"},
+		Mods: emulate.Mods{Supported: true}}
+	m := New(games, gamesDir, "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}))
+	m.modsDir = pile
+	m.patchedDir = t.TempDir()
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m, romPath, src, m.patchedDir
+}
+
+func TestMetaModsDeployShowsExactName(t *testing.T) {
+	m, _, _, _ := modDeployModel(t)
+	m = metaCursorTo(t, m, "mods")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m = metaCursorTo(t, m, "mod")
+	// The row names the exact deployed file RetroArch wants.
+	if got := metaRowText(t, m, "mod"); !strings.Contains(got, "hack.ips → game.ips") {
+		t.Fatalf("mod row must show pile → target, got %q", got)
+	}
+}
+
+func TestMetaModsEnterLaunchesInstance(t *testing.T) {
+	m, romPath, _, patchedDir := modDeployModel(t)
+	m = metaCursorTo(t, m, "mods")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m = metaCursorTo(t, m, "mod")
+	// Enter builds the hard-patched instance and launches it.
+	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if cmd == nil {
+		t.Fatalf("enter must launch the patched instance")
+	}
+	inst := filepath.Join(patchedDir, "game [hack].nes")
+	data, err := os.ReadFile(inst)
+	if err != nil {
+		t.Fatalf("instance must be built: %v", err)
+	}
+	rom, _ := os.ReadFile(romPath)
+	want := append([]byte(nil), rom...)
+	copy(want[10:], "HELLO")
+	for i := range want {
+		if data[i] != want[i] {
+			t.Fatalf("instance byte %d differs", i)
+		}
+	}
+	if !strings.Contains(m.status, "hack.ips") {
+		t.Fatalf("status must name the mod, got %q", m.status)
+	}
+	if got := metaRowText(t, m, "mod"); !strings.Contains(got, "[built]") {
+		t.Fatalf("built mod must show built, got %q", got)
+	}
+	// The pile source and the original ROM are untouched.
+	if data, _ := os.ReadFile(romPath); !bytes.Equal(data, rom) {
+		t.Fatalf("original ROM must survive")
+	}
+}
+
+func TestMetaModsEnterBuildFail(t *testing.T) {
+	m, _, _, _ := modDeployModel(t)
+	// Swap the pile file for a BPS built for another dump.
+	bad := filepath.Join(m.modsDir, "game", "hack.ips")
+	other := bytes.Repeat([]byte{0xCD}, 64)
+	patch := mustCreateMod(t, other, mutateMod(other, 20, []byte("X")))
+	if err := os.WriteFile(bad, patch, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Force a recollect: the pile dir mtime may not have changed.
+	m.modKey = ""
+	m = metaCursorTo(t, m, "mods")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m = metaCursorTo(t, m, "mod")
+	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if cmd != nil {
+		t.Fatalf("broken base must not launch")
+	}
+	if !strings.Contains(m.status, "does not match") {
+		t.Fatalf("status must explain the mismatch, got %q", m.status)
+	}
+}
+
+// mustCreateMod builds a BPS patch in tests via RomPatcher.go itself.
+func mustCreateMod(t *testing.T, original, modified []byte) []byte {
+	t.Helper()
+	p, err := rompatcher.Create(original, modified, rompatcher.FormatBPS, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := p.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func mutateMod(rom []byte, off int, payload []byte) []byte {
+	out := append([]byte(nil), rom...)
+	copy(out[off:], payload)
+	return out
+}
+
+func TestMetaModsSoftpatchToggle(t *testing.T) {
+	m, romPath, _, _ := modDeployModel(t)
+	// game.ips occupied by foreign bytes: d must stack to game.ips1.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(romPath), "game.ips"), []byte("FOREIGN"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = metaCursorTo(t, m, "mods")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	m = metaCursorTo(t, m, "mod")
+	if got := metaRowText(t, m, "mod"); !strings.Contains(got, "→ game.ips1") {
+		t.Fatalf("occupied slot must stack, got %q", got)
+	}
+	out, _ = m.Update(keyMsg("d"))
+	m = out.(Model)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(romPath), "game.ips1")); err != nil {
+		t.Fatalf("stacked softpatch must land: %v", err)
+	}
+	// d again removes our copy but never the foreign game.ips.
+	m = metaCursorTo(t, m, "mod")
+	out, _ = m.Update(keyMsg("d"))
+	m = out.(Model)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(romPath), "game.ips1")); !os.IsNotExist(err) {
+		t.Fatalf("d must remove our softpatch copy")
+	}
+	if data, err := os.ReadFile(filepath.Join(filepath.Dir(romPath), "game.ips")); err != nil || string(data) != "FOREIGN" {
+		t.Fatalf("foreign game.ips must survive, err=%v", err)
+	}
+}
+
+// ipsBytes builds a minimal valid IPS: PATCH + one record + EOF.
+func ipsBytes(off int, payload []byte) []byte {
+	data := []byte("PATCH")
+	data = append(data, byte(off>>16), byte(off>>8), byte(off))
+	data = append(data, byte(len(payload)>>8), byte(len(payload)))
+	data = append(data, payload...)
+	return append(data, "EOF"...)
+}
+
+func writeIPSFile(t *testing.T, path string, off int, payload []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, ipsBytes(off, payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// encodeUPSVarint encodes a byuu-style varint (test-side).
+func encodeUPSVarint(n uint64) []byte {
+	var out []byte
+	for {
+		b := byte(n & 0x7F)
+		n >>= 7
+		if n == 0 {
+			return append(out, 0x80|b)
+		}
+		out = append(out, b)
+		n--
+	}
+}
+
+// writeBPSFile builds a minimal valid BPS for rom bytes.
+func writeBPSFile(t *testing.T, path string, rom []byte) {
+	t.Helper()
+	var data []byte
+	data = append(data, "BPS1"...)
+	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
+	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
+	data = append(data, encodeUPSVarint(0)...)
+	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(data, crc32.IEEETable))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appendU32Test(data []byte, v uint32) []byte {
+	return append(data, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
+}
+
+// snesModModel builds a browser model over a real temp games dir with one
+// SNES game and one pile file for it, returning model, rom path, pile path.
+func snesModModel(t *testing.T, romSize int, pileName string, pileBytes []byte) (Model, string, string) {
+	t.Helper()
+	i18n.Set(i18n.En)
+	gamesDir := t.TempDir()
+	romPath := filepath.Join(gamesDir, "smw.sfc")
+	if err := os.WriteFile(romPath, bytes.Repeat([]byte{0xAB}, romSize), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pile := t.TempDir()
+	src := filepath.Join(pile, pileName)
+	if err := os.WriteFile(src, pileBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	games := []rom.Game{{
+		ID: "ccc333", Title: "smw", ConsoleID: "snes",
+		ConsoleName: "Super Nintendo", Path: romPath, SHA256: "ccc333",
+	}}
+	r := emulate.Recipe{Name: "ra-snes", Consoles: []string{"snes"}, Emulator: "e1",
+		Args: []string{"{rom}"},
+		Mods: emulate.Mods{Supported: true}}
+	m := New(games, gamesDir, "/tmp/lib.json",
+		WithRecipes([]emulate.Recipe{r}))
+	m.modsDir = pile
+	m = sizedModel(t, m)
+	m.focus = PaneMeta
+	return m, romPath, src
+}
+
+func openModsList(t *testing.T, m Model) Model {
+	t.Helper()
+	m = metaCursorTo(t, m, "mods")
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return out.(Model)
+}
+
+func TestMetaModsBadBaseHeaderHint(t *testing.T) {
+	// BPS built for the headered dump (+512) vs a headerless SNES ROM:
+	// [bad base] plus the SMC-header hint.
+	headered := bytes.Repeat([]byte{0xAB}, 1024+512)
+	var data []byte
+	data = append(data, "BPS1"...)
+	data = append(data, encodeUPSVarint(uint64(len(headered)))...)
+	data = append(data, encodeUPSVarint(uint64(len(headered)))...)
+	data = append(data, encodeUPSVarint(0)...)
+	data = appendU32Test(data, crc32.Checksum(headered, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(headered, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(data, crc32.IEEETable))
+	m, _, _ := snesModModel(t, 1024, "smw.bps", data)
+	m = openModsList(t, m)
+	m = metaCursorTo(t, m, "mod")
+	got := metaRowText(t, m, "mod")
+	for _, want := range []string{"smw.bps → smw.bps", "[bad base]", "SMC header"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("row must show %q, got %q", want, got)
+		}
+	}
+}
+
+func TestMetaModsBrokenFile(t *testing.T) {
+	// An HTML page saved as .ips (classic bad download).
+	m, _, _ := snesModModel(t, 64, "smw.ips", []byte("<html>not a patch</html>"))
+	m = openModsList(t, m)
+	m = metaCursorTo(t, m, "mod")
+	if got := metaRowText(t, m, "mod"); !strings.Contains(got, "[bad file]") {
+		t.Fatalf("html download must show bad file, got %q", got)
+	}
+}
+
+func TestMetaModsOKNoBadge(t *testing.T) {
+	rom := bytes.Repeat([]byte{0xAB}, 64)
+	var data []byte
+	data = append(data, "BPS1"...)
+	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
+	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
+	data = append(data, encodeUPSVarint(0)...)
+	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
+	data = appendU32Test(data, crc32.Checksum(data, crc32.IEEETable))
+	m, _, _ := snesModModel(t, 64, "smw.bps", data)
+	m = openModsList(t, m)
+	m = metaCursorTo(t, m, "mod")
+	if got := metaRowText(t, m, "mod"); strings.Contains(got, "[") {
+		t.Fatalf("matching bps must have no badge, got %q", got)
+	}
+}
+
+func TestMetaModsNoFile(t *testing.T) {
+	m := modTestModel(t, t.TempDir())
+	m = metaCursorTo(t, m, "mods")
+	if got := metaRowText(t, m, "mods"); !strings.Contains(got, "(no file)") {
+		t.Fatalf("empty pile must show no file, got %q", got)
+	}
+}
+
+func TestSetGamesFiltersInvalid(t *testing.T) {
+	i18n.Set(i18n.En)
+	games := append(sampleGames(),
+		rom.Game{ID: "ghost1", Title: "hack", ConsoleID: "unknown", ConsoleName: "Unknown", Path: "/x/hack.ips"},
+		rom.Game{ID: "ghost2", Title: "readme", ConsoleID: "unknown", ConsoleName: "Unknown", Path: "/x/b.zip", Inner: "readme.txt"},
+		rom.Game{ID: "ghost3", Title: "notes", ConsoleID: "unknown", ConsoleName: "Unknown", Path: "/x/notes.txt"},
+	)
+	m := sizedModel(t, New(games, "/x", "/tmp/lib.json"))
+	if len(m.games) != len(sampleGames()) {
+		t.Fatalf("stale mod/junk rows must be filtered, got %+v", m.games)
+	}
+	for _, g := range m.games {
+		if !rom.ValidGame(g) {
+			t.Fatalf("invalid game leaked into view: %+v", g)
+		}
+	}
 }

@@ -50,7 +50,11 @@ type Achievements struct {
 	Note      string `json:"note,omitempty"`
 }
 
-// Mods describes mod support (path is a placeholder template).
+// Mods describes mod support (path is a placeholder template for the mod
+// pile). Playing a mod builds a hard-patched ROM copy (an "instance" per
+// game+mod, see internal/mods) and launches that, so any emulator works;
+// the template dir additionally feeds RetroArch-style softpatching
+// (game.sfc + game.ips beside the ROM) via the d key.
 type Mods struct {
 	Supported bool   `json:"supported"`
 	Path      string `json:"path,omitempty"`

@@ -56,13 +56,22 @@ func Save(path string, games []rom.Game) error {
 
 // Merge upserts scanned games into the stored collection by stable ID.
 // A re-discovered ID updates its path (ROM moved); stored metadata for
-// IDs no longer on disk is kept.
+// IDs no longer on disk is kept. Entries that are not valid games
+// (mod files, archive junk, unsupported extensions — e.g. rows written
+// by older scans) are pruned from both sides, so the library file heals
+// itself on the next save.
 func Merge(stored, scanned []rom.Game) []rom.Game {
 	byID := make(map[string]rom.Game, len(stored)+len(scanned))
 	for _, g := range stored {
+		if !rom.ValidGame(g) {
+			continue
+		}
 		byID[g.ID] = g
 	}
 	for _, g := range scanned {
+		if !rom.ValidGame(g) {
+			continue
+		}
 		byID[g.ID] = g
 	}
 	out := make([]rom.Game, 0, len(byID))
