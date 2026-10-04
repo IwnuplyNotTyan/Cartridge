@@ -359,11 +359,15 @@ func TestShelfStickyBottom(t *testing.T) {
 	m := shelfScrollModel(t)
 	m.gameCur = len(m.filtered) - 1 // last game, "All games" section
 	lines := viewLines(m.View())
-	if !strings.Contains(lines[2], "All games") {
-		t.Fatalf("sticky header must pin the section:\n%s", m.View())
+	// The pane title itself becomes the section: no "Games (40)" left.
+	if !strings.Contains(lines[1], "All games") {
+		t.Fatalf("title must stick to the section:\n%s", m.View())
+	}
+	if strings.Contains(m.View(), "Games (40)") {
+		t.Fatalf("plain title must be replaced:\n%s", m.View())
 	}
 	if n := strings.Count(m.View(), "All games"); n != 1 {
-		t.Fatalf("sticky header must not duplicate: %d", n)
+		t.Fatalf("sticky title must not duplicate: %d", n)
 	}
 }
 
@@ -371,12 +375,12 @@ func TestShelfStickyMiddle(t *testing.T) {
 	m := shelfScrollModel(t)
 	m.gameCur = 16 // a rest game mid-list; its section header is off-view
 	lines := viewLines(m.View())
-	// Window starts at the fav game row: sticky shows Favorites once.
-	if !strings.Contains(lines[2], "Favorites") {
-		t.Fatalf("sticky header must pin Favorites:\n%s", m.View())
+	// Window starts at the fav game row: the title sticks to Favorites.
+	if !strings.Contains(lines[1], "Favorites") {
+		t.Fatalf("title must stick to Favorites:\n%s", m.View())
 	}
 	if n := strings.Count(m.View(), "Favorites"); n != 1 {
-		t.Fatalf("sticky header must not duplicate: %d", n)
+		t.Fatalf("sticky title must not duplicate: %d", n)
 	}
 }
 
@@ -384,11 +388,11 @@ func TestShelfNoStickyAtTop(t *testing.T) {
 	m := shelfScrollModel(t)
 	m.gameCur = 0 // top: the Recent header is visible itself
 	lines := viewLines(m.View())
+	if !strings.Contains(lines[1], "Games (40)") {
+		t.Fatalf("top must keep the plain title:\n%s", m.View())
+	}
 	if !strings.Contains(lines[2], "Recent") {
 		t.Fatalf("top must show the real header:\n%s", m.View())
-	}
-	if n := strings.Count(m.View(), "Recent"); n != 1 {
-		t.Fatalf("no sticky duplicate at top: %d", n)
 	}
 }
 

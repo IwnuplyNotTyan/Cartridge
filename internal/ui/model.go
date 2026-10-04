@@ -528,9 +528,10 @@ func (m Model) shelfPos() int {
 	return 0
 }
 
-// stickyHeader returns the section header to pin above the window: the
-// header of the topmost visible game, but only when that header itself
-// scrolled off. Flat category lists have no headers at all.
+// stickyHeader returns the section header that owns the topmost visible
+// game: when that header itself scrolled off, the pane title takes its
+// place. A header already in view needs nothing, and flat category
+// lists have no headers at all.
 func (m Model) stickyHeader(start, end int) (string, bool) {
 	top := -1
 	for i := start; i < end && i < len(m.shelf); i++ {
@@ -1508,11 +1509,12 @@ func (m Model) renderGames(w int) string {
 	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
 		title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
 	}
-	if q := strings.TrimSpace(m.activeQuery()); q != "" {
-		title = i18n.T("games.title.search", q, len(m.filtered))
-	}
-	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
+	lines := []string{}
 	if len(m.filtered) == 0 {
+		if q := strings.TrimSpace(m.activeQuery()); q != "" {
+			title = i18n.T("games.title.search", q, len(m.filtered))
+		}
+		lines = append(lines, titleFor(truncate(title, w), m.focus == PaneGames, w))
 		empty := i18n.T("games.empty")
 		if strings.TrimSpace(m.activeQuery()) != "" {
 			empty = i18n.T("games.empty.search")
@@ -1525,12 +1527,14 @@ func (m Model) renderGames(w int) string {
 	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
 	end := min(start+visible, len(m.shelf))
 	// Sticky section header: when the window cuts into a section whose
-	// header scrolled off, pin it on top and drop the last row to keep
-	// the height. A header already in view needs no pin.
-	if label, ok := m.stickyHeader(start, end); ok && end > start {
-		lines = append(lines, titleDim.Render(fit("  "+truncate(label, w-2), w)))
-		end--
+	// header scrolled off, the pane title itself becomes that section.
+	// A visible header or an active search filter keeps the normal title.
+	if q := strings.TrimSpace(m.activeQuery()); q != "" {
+		title = i18n.T("games.title.search", q, len(m.filtered))
+	} else if label, ok := m.stickyHeader(start, end); ok {
+		title = label
 	}
+	lines = append(lines, titleFor(truncate(title, w), m.focus == PaneGames, w))
 	for i := start; i < end; i++ {
 		row := m.shelf[i]
 		switch row.kind {
