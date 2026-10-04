@@ -24,8 +24,6 @@
     "key.deploy": "softpatch",
     "key.search": "search",
     "key.favorite": "favorite",
-    "key.home": "home",
-    "home.title": "Home",
     "home.recent": "Recent",
     "home.favorites": "Favorites",
     "home.empty.recent": "No recent games yet - launch something with x",

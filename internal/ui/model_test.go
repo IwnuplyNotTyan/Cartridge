@@ -94,7 +94,7 @@ func TestThreeColumnsRender(t *testing.T) {
 
 func TestConsoleFilterAndFocus(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
-	// Move to NES row: rows are [All, NES, GBA].
+	// Move to NES row: rows are [Fav, Recent, All, NES, GBA], landing on All.
 	out, _ := m.Update(keyMsg("down"))
 	m = out.(Model)
 	if m.rows[m.consCur].ID != "nes" {
@@ -156,7 +156,8 @@ func TestConsolePageUpDown(t *testing.T) {
 	if m.focus != PaneConsoles {
 		t.Fatalf("expected consoles focus by default, got %d", m.focus)
 	}
-	// rows are [All, NES, GBA]: pgdown jumps to the end, pgup back to start.
+	// rows are [Fav, Recent, All, NES, GBA]: pgdown jumps to the end,
+	// pgup back to the start.
 	out, _ := m.Update(keyMsg("pgdown"))
 	m = out.(Model)
 	if m.rows[m.consCur].ID != "gba" {
@@ -164,8 +165,8 @@ func TestConsolePageUpDown(t *testing.T) {
 	}
 	out, _ = m.Update(keyMsg("pgup"))
 	m = out.(Model)
-	if m.rows[m.consCur].ID != "all" {
-		t.Fatalf("expected all row after pgup, got %q", m.rows[m.consCur].ID)
+	if m.rows[m.consCur].ID != "favorites" {
+		t.Fatalf("expected favorites row after pgup, got %q", m.rows[m.consCur].ID)
 	}
 }
 

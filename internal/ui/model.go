@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,7 +59,6 @@ type keyMap struct {
 	Deploy   key.Binding
 	Search   key.Binding
 	Favorite key.Binding
-	Home     key.Binding
 	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
@@ -82,7 +82,6 @@ func newKeyMap() keyMap {
 		Copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", i18n.T("key.copy"))),
 		Deploy:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", i18n.T("key.deploy"))),
 		Favorite: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", i18n.T("key.favorite"))),
-		Home:     key.NewBinding(key.WithKeys("0"), key.WithHelp("0", i18n.T("key.home"))),
 		Alt:      key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", i18n.T("key.alt"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
@@ -105,30 +104,28 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Settings},
-		{k.Copy, k.Deploy, k.Search, k.Favorite, k.Alt, k.Home, k.Help, k.Quit},
+		{k.Copy, k.Deploy, k.Search, k.Favorite, k.Alt, k.Help, k.Quit},
 	}
 }
 
-// homeItem is one home-page row: a section header, a dim hint line for
-// an empty section, or a selectable game.
-type homeItem struct {
-	selectable bool
-	header     bool
-	title      string
-	sub        string
-	game       rom.Game
-}
-
-// recentLimit caps the recent-games section of the home page.
-const recentLimit = 5
-
-// ConsoleRow is one entry of the left column.
+// ConsoleRow is one entry of the left column. Besides consoles it holds
+// two pinned rows on top: favorites ("favorites") and recent games
+// ("recent"); "all" is the full library.
 type ConsoleRow struct {
 	ID    string
 	Name  string
 	Short string
 	Count int
 }
+
+// Pinned row IDs and the recent section size.
+const (
+	rowFavorites = "favorites"
+	rowRecent    = "recent"
+	rowAll       = "all"
+
+	recentLimit = 5
+)
 
 // metaRow is one navigable metadata row: copy holds the clipboard text,
 // kind is "recipe"/"core" on switchable rows, "cheats" on the summary row,
@@ -204,11 +201,8 @@ type Model struct {
 	// overrides persists per-game emulator/core choices from metadata (n/p).
 	overrides *overrides.Store
 	play      *playtime.Store
-	// favorites persists favorite game IDs shown on the home page.
+	// favorites persists favorite game IDs pinned above the consoles list.
 	favorites *favorites.Store
-	// Home page state: a flat list of section headers and game rows.
-	homeCur   int
-	homeItems []homeItem
 
 	// Settings screen state. Only the bottom bar and help survive
 	// from the browser view; tabs sit on top.
@@ -329,6 +323,18 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 		m.langRaw = "auto"
 	}
 	m.setGames(games)
+	// Start on the favorites shelf when it has games, else the library:
+	// the pinned rows are always visible, but an empty shelf is a poor
+	// landing page. Rescans keep the user's own position (see setGames).
+	if m.favCount() == 0 {
+		for i, r := range m.rows {
+			if r.ID == rowAll {
+				m.consCur = i
+				break
+			}
+		}
+		m.refilter()
+	}
 	return m
 }
 
@@ -349,7 +355,13 @@ func (m *Model) setGames(games []rom.Game) {
 		counts[g.ConsoleID]++
 		names[g.ConsoleID] = g.ConsoleName
 	}
-	m.rows = []ConsoleRow{{ID: "all", Name: i18n.T("row.all"), Count: len(games)}}
+	// Pinned rows always sit on top: favorites first (the startup shelf),
+	// then recent, then the full library.
+	m.rows = []ConsoleRow{
+		{ID: rowFavorites, Name: "★ " + i18n.T("home.favorites"), Short: "★", Count: m.favCount()},
+		{ID: rowRecent, Name: i18n.T("home.recent"), Short: "…", Count: len(m.recentGames())},
+		{ID: rowAll, Name: i18n.T("row.all"), Count: len(games)},
+	}
 	for _, c := range rom.Consoles {
 		if n, ok := counts[c.ID]; ok {
 			m.rows = append(m.rows, ConsoleRow{ID: c.ID, Name: c.Name, Short: c.Short, Count: n})
@@ -366,8 +378,74 @@ func (m *Model) setGames(games []rom.Game) {
 	m.refilter()
 }
 
+// favCount counts favorited games in the current library.
+func (m Model) favCount() int {
+	n := 0
+	for _, g := range m.games {
+		if m.favorites.Has(g.ID) {
+			n++
+		}
+	}
+	return n
+}
+
+// recentGames returns up to recentLimit played games, newest first.
+func (m Model) recentGames() []rom.Game {
+	type played struct {
+		g  rom.Game
+		at int64 // unix nano, -1 when unknown
+	}
+	var list []played
+	for _, g := range m.games {
+		at := int64(-1)
+		if m.play != nil {
+			if st, ok := m.play.Get(g.ID); ok {
+				at = st.LastPlayed.UnixNano()
+			}
+		}
+		if at >= 0 {
+			list = append(list, played{g, at})
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].at == list[j].at {
+			return list[i].g.ID < list[j].g.ID
+		}
+		return list[i].at > list[j].at
+	})
+	if len(list) > recentLimit {
+		list = list[:recentLimit]
+	}
+	out := make([]rom.Game, 0, len(list))
+	for _, p := range list {
+		out = append(out, p.g)
+	}
+	return out
+}
+
+// refreshRowCounts recomputes every sidebar counter in place without
+// touching cursors, so toggling a favorite updates counts instantly.
+func (m *Model) refreshRowCounts() {
+	counts := map[string]int{}
+	for _, g := range m.games {
+		counts[g.ConsoleID]++
+	}
+	for i, r := range m.rows {
+		switch r.ID {
+		case rowFavorites:
+			m.rows[i].Count = m.favCount()
+		case rowRecent:
+			m.rows[i].Count = len(m.recentGames())
+		case rowAll:
+			m.rows[i].Count = len(m.games)
+		default:
+			m.rows[i].Count = counts[r.ID]
+		}
+	}
+}
+
 func (m *Model) refilter() {
-	id := "all"
+	id := rowAll
 	if m.consCur < len(m.rows) {
 		id = m.rows[m.consCur].ID
 	}
@@ -376,11 +454,26 @@ func (m *Model) refilter() {
 		q = string(m.searchBuf)
 	}
 	q = strings.ToLower(strings.TrimSpace(q))
-	m.filtered = m.filtered[:0]
-	for _, g := range m.games {
-		if id != "all" && g.ConsoleID != id {
-			continue
+	// Scope first: favorites, recent (newest first, capped) or a console.
+	var scoped []rom.Game
+	switch id {
+	case rowFavorites:
+		for _, g := range m.games {
+			if m.favorites.Has(g.ID) {
+				scoped = append(scoped, g)
+			}
 		}
+	case rowRecent:
+		scoped = m.recentGames()
+	default:
+		for _, g := range m.games {
+			if id == rowAll || g.ConsoleID == id {
+				scoped = append(scoped, g)
+			}
+		}
+	}
+	m.filtered = m.filtered[:0]
+	for _, g := range scoped {
 		if q != "" && !strings.Contains(strings.ToLower(g.Title), q) {
 			continue
 		}
@@ -720,6 +813,26 @@ func (m *Model) toggleSoftpatch() {
 	m.status = i18n.T("status.mod.removed", filepath.Base(dst))
 }
 
+// toggleFavorite flips the favorite mark on the selected game and
+// persists it. Row counts refresh in place so the cursor never jumps.
+func (m *Model) toggleFavorite() {
+	g := m.selected()
+	if g == nil || m.favorites == nil {
+		return
+	}
+	if m.favorites.Toggle(g.ID) {
+		m.status = i18n.T("status.fav.added", g.Title)
+	} else {
+		m.status = i18n.T("status.fav.removed", g.Title)
+	}
+	if err := m.favorites.Save(); err != nil {
+		m.status = i18n.T("status.save_fail", err)
+		return
+	}
+	m.refreshRowCounts()
+	m.refreshMeta()
+}
+
 // copyCmd writes text to the terminal clipboard via OSC52 (works over SSH;
 // tmux needs `set-clipboard on` or passthrough).
 func copyCmd(s string) tea.Cmd {
@@ -818,9 +931,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
 		}
-		if m.mode == ModeHome {
-			m.rebuildHome()
-		}
 		m.sizeMeta()
 		m.refreshMeta()
 		return m, nil
@@ -838,9 +948,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
-		}
-		if m.mode == ModeHome {
-			m.rebuildHome() // the just-played game tops Recent
 		}
 		m.refreshMeta()
 		return m, nil
@@ -937,9 +1044,6 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == ModeSettings {
 		return m.updateSettings(msg)
 	}
-	if m.mode == ModeHome {
-		return m.updateHome(msg)
-	}
 	if m.searching {
 		return m.updateSearch(msg)
 	}
@@ -982,9 +1086,6 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "0":
-		m.openHome()
-		return m, nil
 	case "1":
 		m.setFocus(PaneConsoles)
 		return m, nil
@@ -1235,8 +1336,6 @@ func (m Model) View() string {
 	var body string
 	if m.mode == ModeSettings {
 		body = m.renderSettings()
-	} else if m.mode == ModeHome {
-		body = m.renderHome()
 	} else {
 		cw, gw, mw := m.layout()
 		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
@@ -1333,8 +1432,14 @@ func (m Model) renderConsoles(w int) string {
 
 func (m Model) renderGames(w int) string {
 	title := i18n.T("games.title.all", len(m.filtered))
-	if m.consCur < len(m.rows) && m.rows[m.consCur].ID != "all" {
-		title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
+	if m.consCur < len(m.rows) {
+		switch m.rows[m.consCur].ID {
+		case rowFavorites, rowRecent:
+			title = fmt.Sprintf("%s (%d)", m.rows[m.consCur].Name, len(m.filtered))
+		case rowAll:
+		default:
+			title = i18n.T("games.title.filter", m.rows[m.consCur].Short, len(m.filtered))
+		}
 	}
 	if q := strings.TrimSpace(m.activeQuery()); q != "" {
 		title = i18n.T("games.title.search", q, len(m.filtered))
@@ -1342,8 +1447,13 @@ func (m Model) renderGames(w int) string {
 	lines := []string{titleFor(truncate(title, w), m.focus == PaneGames, w)}
 	if len(m.filtered) == 0 {
 		empty := i18n.T("games.empty")
-		if strings.TrimSpace(m.activeQuery()) != "" {
+		switch {
+		case strings.TrimSpace(m.activeQuery()) != "":
 			empty = i18n.T("games.empty.search")
+		case m.consCur < len(m.rows) && m.rows[m.consCur].ID == rowFavorites:
+			empty = i18n.T("home.empty.favorites")
+		case m.consCur < len(m.rows) && m.rows[m.consCur].ID == rowRecent:
+			empty = i18n.T("home.empty.recent")
 		}
 		lines = append(lines, infoStyle.Render(fit(empty, w)))
 		return m.column(lines, w, 1, 1)
@@ -1938,15 +2048,6 @@ func featText(supported bool, extra string, g rom.Game, r *emulate.Recipe) strin
 func dim(s string) string { return infoStyle.Render(s) }
 
 // renderHelp is the bubbles full-help strip right above the bottom bar.
-// barGame is the game shown in the bottom bar: the home cursor pick on
-// the home page, the browser selection elsewhere.
-func (m Model) barGame() *rom.Game {
-	if m.mode == ModeHome {
-		return m.homeSelected()
-	}
-	return m.selected()
-}
-
 func (m Model) renderHelp() string {
 	if !m.showHelp {
 		return ""
@@ -1978,7 +2079,7 @@ func (m Model) renderInfo() string {
 	if ctxBudget > 4 {
 		if m.status != "" {
 			right = barStyle.Render(truncate(m.status, ctxBudget))
-		} else if g := m.barGame(); g != nil {
+		} else if g := m.selected(); g != nil {
 			sid := g.ShortID()
 			if tb := ctxBudget - lipgloss.Width(sid) - 3 - 2; tb >= 4 {
 				right = barStyle.Render(sid+" • ") + titleBadge.Render(" "+truncate(g.Title, tb)+" ")
@@ -2009,7 +2110,7 @@ func (m Model) barHalves(romB, titleB, statusB int) (string, string) {
 	var context string
 	if m.status != "" {
 		context = barStyle.Render(truncate(m.status, statusB))
-	} else if g := m.barGame(); g != nil {
+	} else if g := m.selected(); g != nil {
 		context = barStyle.Render(g.ShortID()+" • ") +
 			titleBadge.Render(" "+truncate(g.Title, titleB)+" ")
 	}
