@@ -27,6 +27,21 @@ func TestParseTitle(t *testing.T) {
 	}
 }
 
+func TestParseTitleKeepsLeadingPublisher(t *testing.T) {
+	for _, tc := range []struct{ in, title, region string }{
+		{"[Aladdin] Micro Machines (USA) (Unl)", "[Aladdin] Micro Machines", "USA"},
+		{"[Aladdin] Fantastic Adventures of Dizzy, The (USA) (Unl)", "[Aladdin] Fantastic Adventures of Dizzy, The", "USA"},
+	} {
+		title, region, _ := ParseTitle(tc.in)
+		if title != tc.title {
+			t.Fatalf("ParseTitle(%q) title = %q, want %q", tc.in, title, tc.title)
+		}
+		if region != tc.region {
+			t.Fatalf("ParseTitle(%q) region = %q, want %q", tc.in, region, tc.region)
+		}
+	}
+}
+
 func TestSniffNES(t *testing.T) {
 	head := append([]byte{'N', 'E', 'S', 0x1A}, bytes.Repeat([]byte{0}, 64)...)
 	con, ok := sniff(head, ".bin")
@@ -335,6 +350,52 @@ func TestScanDirCacheZip(t *testing.T) {
 	}
 	warm, errs := ScanDir(dir, cold)
 	if len(errs) != 0 || !reflect.DeepEqual(cold, warm) {
-		t.Fatalf("zipped rom must reuse cache: %+v, %v", cold, errs)
+		t.Fatalf("zipped rom must reuse cache: %+v, %v", cold, warm)
+	}
+}
+
+func TestScanDirHealsBlankCachedTitles(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "[Aladdin] Micro Machines (USA) (Unl).nes")
+	payload := append([]byte{'N', 'E', 'S', 0x1A}, bytes.Repeat([]byte{0xAB}, 256)...)
+	if err := os.WriteFile(p, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cold, errs := ScanDir(dir, nil)
+	if len(errs) != 0 || len(cold) != 1 {
+		t.Fatalf("cold scan = %+v, %v", cold, errs)
+	}
+	// Simulate a library.json written while the parser blanked titles:
+	// same bytes (ID/size/mtime all match), but Title lost.
+	stale := append([]Game(nil), cold...)
+	stale[0].Title, stale[0].Region, stale[0].Tags = "", "", nil
+	healed, errs := ScanDir(dir, stale)
+	if len(errs) != 0 || len(healed) != 1 {
+		t.Fatalf("heal scan = %+v, %v", healed, errs)
+	}
+	if healed[0].ID != cold[0].ID {
+		t.Fatalf("healed entry must keep its content ID")
+	}
+	if healed[0].Title != "[Aladdin] Micro Machines" || healed[0].Region != "USA" {
+		t.Fatalf("blank title must heal, got %+v", healed[0])
+	}
+}
+
+func TestIdentifyNeverBlankTitle(t *testing.T) {
+	dir := t.TempDir()
+	// A file named exactly ".nes": the stem is empty, the row must not be.
+	p := filepath.Join(dir, ".nes")
+	if err := os.WriteFile(p, append([]byte{'N', 'E', 'S', 0x1A}, bytes.Repeat([]byte{0xAB}, 64)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g, err := Identify(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Title == "" {
+		t.Fatalf("title must never be blank: %+v", g)
+	}
+	if games, _ := ScanDir(dir, nil); len(games) != 1 || games[0].Title == "" {
+		t.Fatalf("scan must not produce blank rows: %+v", games)
 	}
 }

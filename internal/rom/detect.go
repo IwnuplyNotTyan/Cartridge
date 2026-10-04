@@ -271,6 +271,9 @@ func identifyPlain(path, rawName string) (Game, error) {
 
 	con, _ := sniff(head, filepath.Ext(path))
 	title, region, tags := ParseTitle(strings.TrimSuffix(rawName, filepath.Ext(rawName)))
+	if title == "" {
+		title = rawName // never a blank row (e.g. a file named ".nes")
+	}
 
 	return Game{
 		ID:          sum,
@@ -320,6 +323,9 @@ func identifyZip(path, rawName string) (Game, error) {
 	}
 	con, _ := sniff(head, filepath.Ext(pick.Name))
 	title, region, tags := ParseTitle(strings.TrimSuffix(filepath.Base(pick.Name), filepath.Ext(pick.Name)))
+	if title == "" {
+		title = filepath.Base(pick.Name) // never a blank row
+	}
 	_ = rawName
 
 	return Game{
@@ -376,32 +382,25 @@ func pickZipEntry(files []*zip.File) *zip.File {
 }
 
 // ParseTitle splits "Name (Region) [tags]" into a clean title,
-// a region and the remaining tags.
+// a region and the remaining tags. Only trailing groups are stripped,
+// so a leading publisher prefix like "[Aladdin] Micro Machines" stays
+// in the title instead of being eaten as a tag (which left it empty).
 func ParseTitle(base string) (title, region string, tags []string) {
 	name := strings.ReplaceAll(base, "_", " ")
-	name = strings.TrimSpace(name)
+	rest := strings.TrimSpace(name)
 
 	var regions []string
-	rest := name
 	for {
-		open := strings.LastIndexAny(rest, "([")
-		if open < 0 {
-			break
+		token, head, ok := cutTrailingGroup(rest)
+		if !ok || head == "" {
+			break // no clean suffix group, or nothing would remain
 		}
-		closing := strings.IndexAny(rest[open:], ")]")
-		if closing < 0 {
-			break
-		}
-		token := strings.TrimSpace(rest[open+1 : open+closing])
-		rest = strings.TrimSpace(rest[:open])
+		rest = head
 		switch {
 		case isRegionToken(token):
 			regions = append(regions, token)
 		case token != "":
 			tags = append([]string{token}, tags...)
-		}
-		if rest == "" {
-			break
 		}
 	}
 	// Regions in original order.
@@ -409,6 +408,44 @@ func ParseTitle(base string) (title, region string, tags []string) {
 		regions[i], regions[j] = regions[j], regions[i]
 	}
 	return rest, strings.Join(regions, ", "), tags
+}
+
+// displayStem returns the filename stem a title is parsed from:
+// the inner entry for zips, else the file itself. Mirrors Identify.
+func displayStem(path, inner string) string {
+	name := filepath.Base(path)
+	if strings.TrimSpace(inner) != "" {
+		name = filepath.Base(inner)
+	}
+	return strings.TrimSuffix(name, filepath.Ext(name))
+}
+
+// cutTrailingGroup splits "head (token)" or "head [token]" at its last
+// group. It reports false when the string does not end with a clean,
+// non-nested group.
+func cutTrailingGroup(s string) (token, head string, ok bool) {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 {
+		return "", s, false
+	}
+	var opener byte
+	switch s[len(s)-1] {
+	case ')':
+		opener = '('
+	case ']':
+		opener = '['
+	default:
+		return "", s, false
+	}
+	open := strings.LastIndexByte(s[:len(s)-1], opener)
+	if open < 0 {
+		return "", s, false
+	}
+	token = strings.TrimSpace(s[open+1 : len(s)-1])
+	if token == "" || strings.ContainsAny(token, "()[]") {
+		return "", s, false
+	}
+	return token, strings.TrimSpace(s[:open]), true
 }
 
 func isRegionToken(t string) bool {
@@ -466,6 +503,16 @@ func ScanDir(root string, cache []Game) ([]Game, []error) {
 			return nil
 		}
 		if c, ok := byPath[path]; ok && cacheFresh(c, info) {
+			// Same bytes, so the ID/size/console stand — but cheap
+			// filename-derived fields are re-parsed with the current
+			// parser. Otherwise a parser fix would never heal rows
+			// stored while the old one blanked them (e.g. titles).
+			title, region, tags := ParseTitle(displayStem(path, c.Inner))
+			if title == "" {
+				title = filepath.Base(path)
+			}
+			c.Title, c.Region, c.Tags = title, region, tags
+			c.ConsoleName = ByID(c.ConsoleID).Name
 			games = append(games, c)
 			return nil
 		}
