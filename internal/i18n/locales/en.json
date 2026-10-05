@@ -33,6 +33,7 @@
     "status.fav.removed": "removed from favorites: %s",
     "key.alt": "cycle option",
     "pane.consoles": "Consoles",
+    "consoles.empty": "Insert cartridge",
     "pane.games": "Games",
     "pane.meta": "Metadata",
     "row.all": "Home",

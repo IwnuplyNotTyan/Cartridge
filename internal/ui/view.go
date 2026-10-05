@@ -223,8 +223,9 @@ func (m Model) renderConsoles(w int) string {
 	// counts, another --- rule, the settings entry. Rules are display
 	// only; consCur == len(rows) addresses the settings entry.
 	type item struct {
-		sep bool
-		row int // index into m.rows, -1 for the settings entry
+		sep  bool
+		hint bool // empty-library hint, display only
+		row  int  // index into m.rows, -1 for the settings entry
 	}
 	var items []item
 	if len(m.rows) > 0 {
@@ -233,12 +234,16 @@ func (m Model) renderConsoles(w int) string {
 		for i := 1; i < len(m.rows); i++ {
 			items = append(items, item{row: i})
 		}
+		if len(m.rows) == 1 {
+			// No consoles at all: hint between the rules.
+			items = append(items, item{hint: true})
+		}
 		items = append(items, item{sep: true})
 	}
 	items = append(items, item{row: -1})
 	cur := 0
 	for i, it := range items {
-		if it.sep {
+		if it.sep || it.hint {
 			continue
 		}
 		if (it.row == -1 && m.onSettingsRow()) || (it.row >= 0 && it.row == m.consCur) {
@@ -250,6 +255,10 @@ func (m Model) renderConsoles(w int) string {
 	for _, it := range items[start:min(start+visible, len(items))] {
 		if it.sep {
 			lines = append(lines, sepStyle.Render(fit(strings.Repeat("─", w), w)))
+			continue
+		}
+		if it.hint {
+			lines = append(lines, infoStyle.Italic(true).Render(fit("  "+truncate(i18n.T("consoles.empty"), w-2), w)))
 			continue
 		}
 		var plain string

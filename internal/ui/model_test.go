@@ -271,6 +271,15 @@ func TestConsolesSettingsRow(t *testing.T) {
 	}
 }
 
+func TestConsolesEmptyHint(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := sizedModel(t, New(nil, "/x", "/tmp/lib.json"))
+	view := m.View()
+	if !strings.Contains(view, "Insert cartridge") {
+		t.Fatalf("empty library must hint to insert cartridge\n%s", view)
+	}
+}
+
 func TestRussianRender(t *testing.T) {
 	prev := i18n.Get()
 	i18n.Set(i18n.Ru)

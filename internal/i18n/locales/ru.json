@@ -33,6 +33,7 @@
     "status.fav.removed": "убрано из избранного: %s",
     "key.alt": "другой вариант",
     "pane.consoles": "Консоли",
+    "consoles.empty": "Вставьте картридж",
     "pane.games": "Игры",
     "pane.meta": "Метаданные",
     "row.all": "Главная",
