@@ -1,0 +1,326 @@
+package ui
+
+import (
+	"strings"
+	"time"
+
+	"charm.land/bubbles/v2/key"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"cartridge/internal/i18n"
+	"cartridge/internal/rom"
+)
+
+// Update: bubbletea messages, search and launch.
+// Init implements tea.Model.
+func (m Model) Init() tea.Cmd { return nil }
+
+// Update implements tea.Model.
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.ready = true
+		m.help.SetWidth(m.contentW())
+		m.sizeMeta()
+		m.refreshMeta()
+		return m, nil
+
+	case rescanMsg:
+		m.setGames(msg.games)
+		if len(msg.errs) > 0 {
+			m.status = i18n.T("status.rescan_err",
+				len(msg.games), pluralWord(len(msg.games), "word.rom"),
+				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
+		} else {
+			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
+		}
+		m.sizeMeta()
+		m.refreshMeta()
+		return m, nil
+
+	case launchDoneMsg:
+		if msg.err != nil {
+			m.status = i18n.T("status.launch_fail", msg.err)
+		} else {
+			if m.play != nil {
+				m.play.Add(msg.gameID, msg.dur)
+				if err := m.play.Save(); err != nil {
+					m.status = i18n.T("status.save_fail", err)
+					m.refreshMeta()
+					return m, nil
+				}
+			}
+			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
+		}
+		m.refreshMeta()
+		return m, nil
+
+	case tea.KeyMsg:
+		return m.updateKey(msg)
+	}
+	return m, nil
+}
+
+// launchSelected starts the emulator for the selected game via its recipe.
+// The TUI is suspended while the emulator runs; the session is timed.
+func (m Model) launchSelected() (tea.Model, tea.Cmd) {
+	g := m.selected()
+	if g == nil {
+		return m, nil
+	}
+	game := *g
+	r := m.gameRecipe(game)
+	if r == nil {
+		m.status = i18n.T("status.no_recipe", game.Title)
+		return m, nil
+	}
+	cmd, err := m.launchCmd(game, r)
+	if err != nil {
+		m.status = i18n.T("status.launch_fail", err)
+		return m, nil
+	}
+	m.status = i18n.T("status.launching", game.Title)
+	start := time.Now()
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return launchDoneMsg{gameID: game.ID, dur: time.Since(start), err: err}
+	})
+}
+
+// activeQuery returns the visible games filter: the live draft while
+// typing, the committed query otherwise.
+func (m Model) activeQuery() string {
+	if m.searching {
+		return string(m.searchBuf)
+	}
+	return m.query
+}
+
+// updateSearch handles keys while the search input line is open:
+// printable input filters the games list live, enter keeps the filter
+// and jumps to it, esc drops it. Arrows keep browsing the live results.
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.searching = false
+		m.searchBuf = nil
+		m.query = ""
+		m.sizeMeta()
+		m.refilter()
+		return m, nil
+	case tea.KeyEnter:
+		m.searching = false
+		m.query = strings.TrimSpace(string(m.searchBuf))
+		m.searchBuf = nil
+		m.sizeMeta()
+		m.setFocus(PaneGames)
+		m.refilter()
+		return m, nil
+	case tea.KeyBackspace:
+		if len(m.searchBuf) > 0 {
+			m.searchBuf = m.searchBuf[:len(m.searchBuf)-1]
+		}
+		m.refilter()
+		return m, nil
+	case tea.KeyUp:
+		if m.gameCur > 0 {
+			m.selectGame(m.gameCur - 1)
+		}
+		return m, nil
+	case tea.KeyDown:
+		if m.gameCur < len(m.filtered)-1 {
+			m.selectGame(m.gameCur + 1)
+		}
+		return m, nil
+	case tea.KeyRunes, tea.KeySpace:
+		m.searchBuf = append(m.searchBuf, msg.Runes...)
+		m.refilter()
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Quit) { // ctrl+c still quits mid-input
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := m.keys
+	if m.mode == ModeSettings {
+		return m.updateSettings(msg)
+	}
+	if m.searching {
+		return m.updateSearch(msg)
+	}
+	switch {
+	case key.Matches(msg, k.Quit):
+		return m, tea.Quit
+	case key.Matches(msg, k.Help):
+		m.showHelp = !m.showHelp
+		m.help.ShowAll = m.showHelp
+		m.sizeMeta()
+		return m, nil
+	case key.Matches(msg, k.Launch):
+		return m.launchSelected()
+	case key.Matches(msg, k.Favorite):
+		m.toggleFavorite()
+		return m, nil
+	case key.Matches(msg, k.Settings):
+		m.openSettings()
+		return m, nil
+	case key.Matches(msg, k.Search):
+		// Prefill with the committed filter so it can be refined.
+		m.searching = true
+		m.searchBuf = []rune(m.query)
+		m.sizeMeta()
+		m.refilter()
+		return m, nil
+	}
+	if m.showHelp && msg.String() == "esc" {
+		m.showHelp = false
+		m.help.ShowAll = false
+		m.sizeMeta()
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, k.Next):
+		m.setFocus((m.focus + 1) % 3)
+		return m, nil
+	case key.Matches(msg, k.Prev):
+		m.setFocus((m.focus + 2) % 3)
+		return m, nil
+	}
+	switch msg.String() {
+	case "1":
+		m.setFocus(PaneConsoles)
+		return m, nil
+	case "2":
+		m.setFocus(PaneGames)
+		return m, nil
+	case "3":
+		m.setFocus(PaneMeta)
+		return m, nil
+	case "esc":
+		// An expanded cheat/mod list collapses first, like settings details.
+		if m.cheatsOpen || m.modsOpen {
+			m.cheatsOpen = false
+			m.modsOpen = false
+			m.refreshMeta()
+			return m, nil
+		}
+		m.setFocus(PaneGames)
+		return m, nil
+	}
+
+	switch m.focus {
+	case PaneConsoles:
+		switch {
+		case key.Matches(msg, k.Up):
+			if m.consCur > 0 {
+				m.consCur--
+				m.gameCur = 0
+				m.refilter()
+			}
+		case key.Matches(msg, k.Down):
+			if m.consCur < len(m.rows)-1 {
+				m.consCur++
+				m.gameCur = 0
+				m.refilter()
+			}
+		case key.Matches(msg, k.PageUp):
+			m.consCur = max(m.consCur-10, 0)
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.PageDown):
+			m.consCur = min(m.consCur+10, len(m.rows)-1)
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.Top):
+			m.consCur = 0
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.Bottom):
+			m.consCur = len(m.rows) - 1
+			m.gameCur = 0
+			m.refilter()
+		case key.Matches(msg, k.Select):
+			m.setFocus(PaneGames)
+		}
+	case PaneGames:
+		switch {
+		case key.Matches(msg, k.Up):
+			if m.gameCur > 0 {
+				m.selectGame(m.gameCur - 1)
+			}
+		case key.Matches(msg, k.Down):
+			if m.gameCur < len(m.filtered)-1 {
+				m.selectGame(m.gameCur + 1)
+			}
+		case key.Matches(msg, k.PageUp):
+			m.selectGame(max(m.gameCur-10, 0))
+		case key.Matches(msg, k.PageDown):
+			m.selectGame(min(m.gameCur+10, max(len(m.filtered)-1, 0)))
+		case key.Matches(msg, k.Top):
+			m.selectGame(0)
+		case key.Matches(msg, k.Bottom):
+			m.selectGame(max(len(m.filtered)-1, 0))
+		case key.Matches(msg, k.Rescan):
+			m.status = i18n.T("status.scanning", m.romDir)
+			return m, m.rescanCmd()
+		case key.Matches(msg, k.Select):
+			m.setFocus(PaneMeta)
+		}
+	case PaneMeta:
+		switch {
+		case key.Matches(msg, k.Up):
+			m.metaMove(-1)
+		case key.Matches(msg, k.Down):
+			m.metaMove(1)
+		case key.Matches(msg, k.PageUp):
+			m.metaMove(-max(m.meta.Height-1, 1))
+		case key.Matches(msg, k.PageDown):
+			m.metaMove(max(m.meta.Height-1, 1))
+		case key.Matches(msg, k.Top):
+			m.metaEdge(false)
+		case key.Matches(msg, k.Bottom):
+			m.metaEdge(true)
+		case key.Matches(msg, k.Copy):
+			return m.metaCopy()
+		case key.Matches(msg, k.Deploy):
+			m.toggleSoftpatch()
+			return m, nil
+		case key.Matches(msg, k.Select):
+			return m.metaSelect()
+		case key.Matches(msg, k.Rescan):
+			m.status = i18n.T("status.scanning", m.romDir)
+			return m, m.rescanCmd()
+		}
+		switch msg.String() {
+		case "n":
+			m.cycleAlt(true)
+		case "p":
+			m.cycleAlt(false)
+		}
+	}
+
+	// Rescan is global: allow it from the consoles pane too.
+	if key.Matches(msg, k.Rescan) {
+		m.status = i18n.T("status.scanning", m.romDir)
+		return m, m.rescanCmd()
+	}
+	return m, nil
+}
+
+func (m Model) rescanCmd() tea.Cmd {
+	dir := m.romDir
+	cache := m.games
+	return func() tea.Msg {
+		games, errs := rom.ScanDir(dir, cache)
+		return rescanMsg{games: games, errs: errs}
+	}
+}
+
+func (m *Model) sizeMeta() {
+	_, _, mw := m.layout()
+	m.meta.Width = max(mw, 10)
+	m.meta.Height = max(m.bodyH()-1, 3) // one line for the METADATA title
+}
