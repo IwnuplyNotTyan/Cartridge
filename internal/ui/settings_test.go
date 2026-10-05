@@ -31,10 +31,11 @@ func settingsModel(t *testing.T) Model {
 
 func openSettings(t *testing.T, m Model) Model {
 	t.Helper()
-	out, _ := m.Update(keyMsg("s"))
+	m.consCur = len(m.rows) // settings entry below the consoles
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := out.(Model)
-	if mm.mode != ModeSettings {
-		t.Fatalf("s must open settings, mode=%d", mm.mode)
+	if !mm.settActive {
+		t.Fatalf("enter on the settings row must open settings")
 	}
 	return mm
 }
@@ -42,27 +43,28 @@ func openSettings(t *testing.T, m Model) Model {
 func TestSettingsTabsOnTop(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	view := m.View()
-	lines := strings.Split(view, "\n")
-	// First content line (after 1-cell top gap) must be the tab strip.
-	first := ""
-	for _, ln := range lines {
-		if strings.TrimSpace(ln) != "" {
-			first = ln
-			break
+	// The consoles column stays on the left; the settings panel with the
+	// tab strip swaps in for games+metadata on the right.
+	for _, want := range []string{"Consoles", "Language", "Recipes", "Paths", " | "} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view must contain %q\n%s", want, view)
 		}
 	}
-	for _, want := range []string{"Language", "Recipes", "Paths", " | "} {
-		if !strings.Contains(first, want) {
-			t.Fatalf("tab strip %q must contain %q\n%s", first, want, view)
+	for _, gone := range []string{"Metadata"} {
+		if strings.Contains(view, gone) {
+			t.Fatalf("settings panel must replace games+metadata, found %q\n%s", gone, view)
 		}
 	}
 }
 
 func TestSettingsKeepsBarAndHelp(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
-	// Browser columns are gone, bar + help stay.
-	if view := m.View(); strings.Contains(view, "CONSOLES") {
-		t.Fatalf("settings must not show browser columns\n%s", view)
+	// The consoles column stays, games+metadata are replaced by settings.
+	if view := m.View(); !strings.Contains(view, "Consoles") {
+		t.Fatalf("settings must keep the consoles column\n%s", view)
+	}
+	if view := m.View(); strings.Contains(view, "Metadata") {
+		t.Fatalf("settings must replace the metadata pane\n%s", view)
 	}
 	out, _ := m.Update(keyMsg("?"))
 	m = out.(Model)
@@ -90,7 +92,7 @@ func TestSettingsTabSwitchAndClose(t *testing.T) {
 	}
 	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = out.(Model)
-	if m.mode != ModeBrowser {
+	if m.settActive {
 		t.Fatalf("esc must close settings")
 	}
 }

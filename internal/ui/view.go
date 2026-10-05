@@ -122,18 +122,28 @@ func (m Model) layout() (cw, gw, mw int) {
 }
 
 // View implements tea.Model.
-// In settings mode only the bottom bar and help survive from the browser;
-// tabs sit on top of the settings body.
+// Hovering the settings row swaps the games+metadata panes for the
+// settings panel; Enter moves the focus inside, Esc steps back out.
 func (m Model) View() string {
 	if !m.ready {
 		return i18n.T("ui.waiting")
 	}
 	var body string
-	if m.mode == ModeSettings {
-		body = m.renderSettings()
+	cw, gw, mw := m.layout()
+	sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
+	if m.onSettingsRow() {
+		sw := gw + mw
+		if gw > 0 && mw > 0 {
+			sw++ // absorb one divider: the panel spans both panes
+		}
+		if cw > 0 && sw > 0 {
+			body = lipgloss.JoinHorizontal(lipgloss.Top,
+				m.renderConsoles(cw), sep, m.column(m.renderSettingsLines(sw), sw, 1, 0))
+		} else {
+			// Too narrow for two panes: settings take the whole body.
+			body = strings.Join(m.renderSettingsLines(m.contentW()), "\n")
+		}
 	} else {
-		cw, gw, mw := m.layout()
-		sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
 		parts := make([]string, 0, 5)
 		if cw > 0 {
 			if len(parts) > 0 {
@@ -208,17 +218,60 @@ func styledBarRow(plain string) string {
 }
 
 func (m Model) renderConsoles(w int) string {
-	lines := []string{titleFor(i18n.T("pane.consoles"), m.focus == PaneConsoles, w)}
+	lines := []string{titleFor(i18n.T("pane.consoles"), m.focus == PaneConsoles && !m.settActive, w)}
+	// Display order: Home without a count, a --- rule, consoles with
+	// counts, another --- rule, the settings entry. Rules are display
+	// only; consCur == len(rows) addresses the settings entry.
+	type item struct {
+		sep bool
+		row int // index into m.rows, -1 for the settings entry
+	}
+	var items []item
+	if len(m.rows) > 0 {
+		items = append(items, item{row: 0})
+		items = append(items, item{sep: true})
+		for i := 1; i < len(m.rows); i++ {
+			items = append(items, item{row: i})
+		}
+		items = append(items, item{sep: true})
+	}
+	items = append(items, item{row: -1})
+	cur := 0
+	for i, it := range items {
+		if it.sep {
+			continue
+		}
+		if (it.row == -1 && m.onSettingsRow()) || (it.row >= 0 && it.row == m.consCur) {
+			cur = i
+		}
+	}
 	visible := max(m.bodyH()-1, 1)
-	start := clamp(m.consCur-visible/2, 0, max(len(m.rows)-visible, 0))
-	for i := start; i < min(start+visible, len(m.rows)); i++ {
-		r := m.rows[i]
-		count := fmt.Sprintf("%d", r.Count)
-		nameW := max(w-2-1-len(count), 4)
-		name := truncate(r.Name, nameW)
-		plain := fit("  "+name+strings.Repeat(" ", max(nameW-lipgloss.Width(name)+1, 1))+count, w)
-		if i == m.consCur {
-			plain = styledRow(plain)
+	start := clamp(cur-visible/2, 0, max(len(items)-visible, 0))
+	for _, it := range items[start:min(start+visible, len(items))] {
+		if it.sep {
+			lines = append(lines, sepStyle.Render(fit(strings.Repeat("─", w), w)))
+			continue
+		}
+		var plain string
+		if it.row == -1 {
+			plain = fit("  "+truncate(i18n.T("row.settings"), w-2), w)
+			if m.onSettingsRow() {
+				plain = styledRow(plain)
+			}
+		} else {
+			r := m.rows[it.row]
+			if it.row == 0 {
+				// Home is a mode, not a console: no game count.
+				plain = fit("  "+truncate(r.Name, w-2), w)
+			} else {
+				count := fmt.Sprintf("%d", r.Count)
+				nameW := max(w-2-1-len(count), 4)
+				name := truncate(r.Name, nameW)
+				plain = fit("  "+name+strings.Repeat(" ", max(nameW-lipgloss.Width(name)+1, 1))+count, w)
+			}
+			if it.row == m.consCur {
+				plain = styledRow(plain)
+			}
 		}
 		lines = append(lines, plain)
 	}

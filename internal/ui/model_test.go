@@ -156,16 +156,118 @@ func TestConsolePageUpDown(t *testing.T) {
 	if m.focus != PaneConsoles {
 		t.Fatalf("expected consoles focus by default, got %d", m.focus)
 	}
-	// rows are [All, NES, GBA]: pgdown jumps to the end, pgup back to start.
+	// rows are [All, NES, GBA] + settings entry: pgdown jumps to the
+	// settings entry at the bottom, pgup back to the start.
 	out, _ := m.Update(keyMsg("pgdown"))
 	m = out.(Model)
-	if m.rows[m.consCur].ID != "gba" {
-		t.Fatalf("expected gba row after pgdown, got %q", m.rows[m.consCur].ID)
+	if !m.onSettingsRow() {
+		t.Fatalf("expected settings row after pgdown, consCur=%d", m.consCur)
 	}
 	out, _ = m.Update(keyMsg("pgup"))
 	m = out.(Model)
 	if m.rows[m.consCur].ID != "all" {
 		t.Fatalf("expected all row after pgup, got %q", m.rows[m.consCur].ID)
+	}
+}
+
+func TestConsolesSettingsRow(t *testing.T) {
+	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
+	view := m.View()
+	if !strings.Contains(view, "Settings") {
+		t.Fatalf("consoles must show a settings entry\n%s", view)
+	}
+	if !strings.Contains(view, "───") {
+		t.Fatalf("consoles must separate Home/consoles/settings with ─── rules\n%s", view)
+	}
+	// Hover the settings row: games+metadata give way to the panel.
+	m.consCur = len(m.rows)
+	if view := m.View(); strings.Contains(view, "Metadata") {
+		t.Fatalf("hovering settings must replace metadata\n%s", view)
+	}
+	// Enter focuses inside, esc steps back out to the consoles.
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if !m.settActive {
+		t.Fatalf("enter must focus settings")
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.settActive {
+		t.Fatalf("esc must leave settings")
+	}
+	// Esc from inside steps back to the settings row (hover, panel
+	// stays); a second esc on the row returns Home with the full
+	// shelf, not a console filter.
+	if !m.onSettingsRow() {
+		t.Fatalf("esc must step back to the settings row, consCur=%d", m.consCur)
+	}
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = out.(Model)
+	if m.onSettingsRow() {
+		t.Fatalf("esc on the row must leave it, consCur=%d", m.consCur)
+	}
+	if m.consCur != 0 {
+		t.Fatalf("esc must return to Home, consCur=%d", m.consCur)
+	}
+	if view := m.View(); !strings.Contains(view, "Metadata") {
+		t.Fatalf("esc must restore games+metadata\n%s", view)
+	}
+	if view := m.View(); !strings.Contains(view, "All games") {
+		t.Fatalf("esc must restore the full shelf, not a console filter\n%s", view)
+	}
+	// Left steps off the row too; tab enters settings.
+	m.consCur = len(m.rows)
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = out.(Model)
+	if m.onSettingsRow() {
+		t.Fatalf("left must leave the settings row, consCur=%d", m.consCur)
+	}
+	m.consCur = len(m.rows)
+	out, _ = m.Update(keyMsg("tab"))
+	if !out.(Model).settActive {
+		t.Fatalf("tab must enter settings")
+	}
+	// h/Left flip tabs, except on the first tab where they step out
+	// to the consoles list. Tabs are set explicitly: entering
+	// settings keeps the last used tab.
+	m.consCur = len(m.rows)
+	out, _ = m.Update(keyMsg("tab"))
+	m = out.(Model)
+	m.settTab = TabRecipes
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = out.(Model)
+	if !m.settActive || m.settTab != TabLang {
+		t.Fatalf("left on recipes must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
+	}
+	m.settTab = TabRecipes
+	out, _ = m.Update(keyMsg("h"))
+	m = out.(Model)
+	if !m.settActive || m.settTab != TabLang {
+		t.Fatalf("h on recipes must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
+	}
+	// First tab: h/Left step back to the settings row (hover).
+	out, _ = m.Update(keyMsg("h"))
+	m = out.(Model)
+	if m.settActive || !m.onSettingsRow() {
+		t.Fatalf("h on first tab must step back to the row, active=%v consCur=%d", m.settActive, m.consCur)
+	}
+	m.consCur = len(m.rows)
+	out, _ = m.Update(keyMsg("tab"))
+	m = out.(Model)
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = out.(Model)
+	if m.settActive || !m.onSettingsRow() {
+		t.Fatalf("left on first tab must step back to the row, active=%v consCur=%d", m.settActive, m.consCur)
+	}
+	// shift+tab still flips to the previous tab.
+	m.consCur = len(m.rows)
+	out, _ = m.Update(keyMsg("tab"))
+	m = out.(Model)
+	m.settTab = TabRecipes
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = out.(Model)
+	if !m.settActive || m.settTab != TabLang {
+		t.Fatalf("shift+tab must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
 	}
 }
 

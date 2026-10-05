@@ -8,17 +8,10 @@ import (
 	"cartridge/internal/i18n"
 )
 
-// Settings screen: modes, tabs, paths and language.
-// Mode is the top-level screen: browser or settings.
-// Settings keeps only the bottom bar and help from the browser view.
-type Mode int
-
-const (
-	ModeBrowser Mode = iota
-	ModeSettings
-)
-
-// SettingsTab is one tab of the settings screen.
+// Settings screen: tabs, paths and language.
+// Settings live in the left column under the consoles list: hovering the
+// settings row swaps the games+metadata panes for the settings panel,
+// Enter moves the focus inside, Esc steps back to the consoles.
 type SettingsTab int
 
 const (
@@ -88,20 +81,38 @@ func (m Model) langCur() int {
 	return 0
 }
 
-// openSettings enters settings mode, keeping bar+help.
+// onSettingsRow reports whether the consoles cursor sits on the settings
+// entry below the consoles list (index len(rows): a pseudo-row, not a
+// console filter).
+func (m Model) onSettingsRow() bool {
+	return m.consCur >= len(m.rows)
+}
+
+// leaveSettingsRow steps the consoles cursor off the settings entry back
+// to Home, restoring the full shelf. The settings entry belongs to the
+// Home view (hovering it shows the unfiltered shelf), so exiting returns
+// there instead of landing on a console filter.
+func (m *Model) leaveSettingsRow() {
+	m.consCur = 0
+	m.gameCur = 0
+	m.refilter()
+}
+
+// openSettings moves the focus inside the inline settings panel,
+// keeping the consoles column on the left.
 func (m *Model) openSettings() {
-	m.mode = ModeSettings
+	m.settActive = true
 	m.settCur = 0
 	m.settEditing = false
 	m.settBuf = nil
 	m.settPatchField = ""
 	m.settField = -1
-	m.settCur = clamp(m.settCur, 0, 0)
 }
 
-// closeSettings returns to the browser.
+// closeSettings steps back out to the settings row (hover): the panel
+// stays visible, a second step (Esc/arrows on the row) returns Home.
 func (m *Model) closeSettings() {
-	m.mode = ModeBrowser
+	m.settActive = false
 	m.settEditing = false
 	m.settBuf = nil
 	m.settPatchField = ""

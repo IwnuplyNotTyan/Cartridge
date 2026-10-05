@@ -145,7 +145,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := m.keys
-	if m.mode == ModeSettings {
+	if m.settActive {
 		return m.updateSettings(msg)
 	}
 	if m.searching {
@@ -164,9 +164,6 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, k.Favorite):
 		m.toggleFavorite()
 		return m, nil
-	case key.Matches(msg, k.Settings):
-		m.openSettings()
-		return m, nil
 	case key.Matches(msg, k.Search):
 		// Prefill with the committed filter so it can be refined.
 		m.searching = true
@@ -183,9 +180,17 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, k.Next):
+		if m.onSettingsRow() {
+			m.openSettings()
+			return m, nil
+		}
 		m.setFocus((m.focus + 1) % 3)
 		return m, nil
 	case key.Matches(msg, k.Prev):
+		if m.onSettingsRow() {
+			m.leaveSettingsRow()
+			return m, nil
+		}
 		m.setFocus((m.focus + 2) % 3)
 		return m, nil
 	}
@@ -194,10 +199,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFocus(PaneConsoles)
 		return m, nil
 	case "2":
-		m.setFocus(PaneGames)
+		if !m.onSettingsRow() {
+			m.setFocus(PaneGames)
+		}
 		return m, nil
 	case "3":
-		m.setFocus(PaneMeta)
+		if !m.onSettingsRow() {
+			m.setFocus(PaneMeta)
+		}
 		return m, nil
 	case "esc":
 		// An expanded cheat/mod list collapses first, like settings details.
@@ -205,6 +214,12 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cheatsOpen = false
 			m.modsOpen = false
 			m.refreshMeta()
+			return m, nil
+		}
+		if m.onSettingsRow() && m.focus == PaneConsoles {
+			// The games pane is hidden behind the settings panel:
+			// step back to the consoles instead of focusing it.
+			m.leaveSettingsRow()
 			return m, nil
 		}
 		m.setFocus(PaneGames)
@@ -221,7 +236,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.refilter()
 			}
 		case key.Matches(msg, k.Down):
-			if m.consCur < len(m.rows)-1 {
+			if m.consCur < len(m.rows) {
 				m.consCur++
 				m.gameCur = 0
 				m.refilter()
@@ -231,7 +246,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.gameCur = 0
 			m.refilter()
 		case key.Matches(msg, k.PageDown):
-			m.consCur = min(m.consCur+10, len(m.rows)-1)
+			m.consCur = min(m.consCur+10, len(m.rows))
 			m.gameCur = 0
 			m.refilter()
 		case key.Matches(msg, k.Top):
@@ -239,11 +254,15 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.gameCur = 0
 			m.refilter()
 		case key.Matches(msg, k.Bottom):
-			m.consCur = len(m.rows) - 1
+			m.consCur = len(m.rows)
 			m.gameCur = 0
 			m.refilter()
 		case key.Matches(msg, k.Select):
-			m.setFocus(PaneGames)
+			if m.onSettingsRow() {
+				m.openSettings()
+			} else {
+				m.setFocus(PaneGames)
+			}
 		}
 	case PaneGames:
 		switch {

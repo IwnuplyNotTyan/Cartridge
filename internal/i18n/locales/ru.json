@@ -36,6 +36,7 @@
     "pane.games": "Игры",
     "pane.meta": "Метаданные",
     "row.all": "Главная",
+    "row.settings": "Настройки",
     "row.unknown": "Неизвестно",
     "games.title.all": "Игры (%d)",
     "games.title.filter": "Игры - %s (%d)",

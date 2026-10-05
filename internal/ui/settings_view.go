@@ -120,9 +120,9 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch msg.String() {
-	case "esc", "s", "S":
+	case "esc":
 		// Esc on a detail row steps back to the recipe row;
-		// s (or esc on the row itself) closes settings.
+		// esc on the row itself steps back out to the consoles.
 		if msg.String() == "esc" && m.settTab == TabRecipes && !m.settEditing && m.settField != -1 {
 			m.settField = -1
 			return m, nil
@@ -153,6 +153,14 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, k.Prev) || msg.String() == "left" || msg.String() == "h" {
+		// No previous page on the first tab: h/Left step out to the
+		// consoles list (closeSettings also leaves the settings row,
+		// so one press restores games+metadata). Other tabs flip to
+		// the previous one; Tab is untouched (next tab).
+		if m.settTab == TabLang {
+			m.closeSettings()
+			return m, nil
+		}
 		m.settTab = (m.settTab + NumSettingsTabs - 1) % NumSettingsTabs
 		m.settCur = 0
 		m.settField = -1
@@ -281,7 +289,9 @@ func (m Model) renderSettingsTabs(w int) string {
 	parts := make([]string, 0, NumSettingsTabs)
 	for t := SettingsTab(0); t < NumSettingsTabs; t++ {
 		title := tabTitle(t)
-		if t == m.settTab {
+		// Bright active tab only while the focus is inside the panel;
+		// on hover the whole strip stays dim.
+		if t == m.settTab && m.settActive {
 			parts = append(parts, titleActive.Render(title))
 		} else {
 			parts = append(parts, titleDim.Render(title))
@@ -293,10 +303,10 @@ func (m Model) renderSettingsTabs(w int) string {
 	return fit(line, w)
 }
 
-// renderSettings builds the settings body: tabs on top, tab content below.
-// Only the bottom bar and help survive from the browser view.
-func (m Model) renderSettings() string {
-	w := m.contentW()
+// renderSettingsLines builds the settings panel content for width w:
+// tabs on top, tab content below, padded to bodyH rows. The panel swaps
+// in for the games+metadata panes while the settings row is hovered.
+func (m Model) renderSettingsLines(w int) []string {
 	var lines []string
 	lines = append(lines, m.renderSettingsTabs(w))
 	lines = append(lines, "")
@@ -311,7 +321,7 @@ func (m Model) renderSettings() string {
 	for len(lines) < m.bodyH() {
 		lines = append(lines, "")
 	}
-	return strings.Join(lines[:m.bodyH()], "\n")
+	return lines[:m.bodyH()]
 }
 
 func (m Model) renderLangTab(w int) []string {

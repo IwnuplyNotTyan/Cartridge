@@ -29,7 +29,7 @@ type rescanMsg struct {
 // Model is the bubbletea root model.
 type Model struct {
 	games    []rom.Game
-	rows     []ConsoleRow // rows[0] is always "All"
+	rows     []ConsoleRow // rows[0] is always Home; consCur == len(rows) is the settings entry
 	consCur  int
 	gameCur  int
 	filtered []rom.Game
@@ -85,9 +85,10 @@ type Model struct {
 	// favorites persists favorite game IDs pinned above the consoles list.
 	favorites *favorites.Store
 
-	// Settings screen state. Only the bottom bar and help survive
-	// from the browser view; tabs sit on top.
-	mode        Mode
+	// Settings panel state. Settings live in the left column under the
+	// consoles: hovering the settings row swaps games+metadata for the
+	// panel, settActive means the focus is inside it.
+	settActive  bool
 	settTab     SettingsTab
 	settCur     int
 	settEditing bool
@@ -234,8 +235,8 @@ func (m *Model) setGames(games []rom.Game) {
 	if n, ok := counts["unknown"]; ok {
 		m.rows = append(m.rows, ConsoleRow{ID: "unknown", Name: i18n.T("row.unknown"), Short: "???", Count: n})
 	}
-	if m.consCur >= len(m.rows) {
-		m.consCur = 0
+	if m.consCur > len(m.rows) {
+		m.consCur = len(m.rows)
 	}
 	m.gameCur = 0
 	m.refilter()

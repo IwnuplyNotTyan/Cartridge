@@ -36,6 +36,7 @@
     "pane.games": "Games",
     "pane.meta": "Metadata",
     "row.all": "Home",
+    "row.settings": "Settings",
     "row.unknown": "Unknown",
     "games.title.all": "Games (%d)",
     "games.title.filter": "Games - %s (%d)",
