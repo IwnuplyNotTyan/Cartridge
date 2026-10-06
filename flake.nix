@@ -1,5 +1,5 @@
 {
-  description = "🕹️ Cartridge — retro ROM shelf TUI";
+  description = "🕹️ Cartridge ~ All emulators just here";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -14,14 +14,14 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       version = "0.1.0";
-      mkCartridge = pkgs: pkgs.buildGoModule {
+      mkCartridge = pkgs: pkgs.buildGo127Module {
         pname = "cartridge";
         inherit version;
         src = self;
 
         # Fill after `go.mod` changes:
         #   nix build 2>&1 | grep 'got:'
-        vendorHash = pkgs.lib.fakeHash;
+        vendorHash = "sha256-EOBH7kzJLPMMdYErNgQRI46sfEs1GFRvTdUbKe5scXQ=";
 
         ldflags = [
           "-s"
@@ -29,7 +29,7 @@
         ];
 
         meta = {
-          description = "Retro ROM shelf: detect, shelve and browse console games in the terminal";
+          description = "Retro games manager ✨";
           mainProgram = "cartridge";
         };
       };
