@@ -1242,8 +1242,7 @@ func TestMetaModsSoftpatchToggle(t *testing.T) {
 	}
 	// d again removes our copy but never the foreign game.ips.
 	m = metaCursorTo(t, m, "mod")
-	out, _ = m.Update(keyMsg("d"))
-	m = out.(Model)
+	_, _ = m.Update(keyMsg("d"))
 	if _, err := os.Stat(filepath.Join(filepath.Dir(romPath), "game.ips1")); !os.IsNotExist(err) {
 		t.Fatalf("d must remove our softpatch copy")
 	}
@@ -1282,25 +1281,6 @@ func encodeUPSVarint(n uint64) []byte {
 		}
 		out = append(out, b)
 		n--
-	}
-}
-
-// writeBPSFile builds a minimal valid BPS for rom bytes.
-func writeBPSFile(t *testing.T, path string, rom []byte) {
-	t.Helper()
-	var data []byte
-	data = append(data, "BPS1"...)
-	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
-	data = append(data, encodeUPSVarint(uint64(len(rom)))...)
-	data = append(data, encodeUPSVarint(0)...)
-	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
-	data = appendU32Test(data, crc32.Checksum(rom, crc32.IEEETable))
-	data = appendU32Test(data, crc32.Checksum(data, crc32.IEEETable))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
 	}
 }
 

@@ -120,15 +120,9 @@ func (m *Model) refilter() {
 		rest = scoped
 	}
 	m.filtered = m.filtered[:0]
-	for _, g := range recent {
-		m.filtered = append(m.filtered, g)
-	}
-	for _, g := range favs {
-		m.filtered = append(m.filtered, g)
-	}
-	for _, g := range rest {
-		m.filtered = append(m.filtered, g)
-	}
+	m.filtered = append(m.filtered, recent...)
+	m.filtered = append(m.filtered, favs...)
+	m.filtered = append(m.filtered, rest...)
 	// Display rows: headers per section (a hint when it is empty and
 	// nothing filters), single blank lines between blocks. Categories
 	// stay flat: no sections outside the All view.

@@ -330,10 +330,10 @@ func (m Model) renderLangTab(w int) []string {
 	for i, opt := range langOptions() {
 		label := opt[1]
 		var plain string
-		switch {
-		case i == m.settCur:
+		switch i {
+		case m.settCur:
 			plain = styledRow(fit("  "+truncate(label, w-2), w))
-		case i == cur:
+		case cur:
 			// The active language: bold white, no background.
 			plain = "  " + langActive.Render(truncate(label, w-2))
 		default:

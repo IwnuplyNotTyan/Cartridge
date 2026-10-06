@@ -32,7 +32,6 @@ type File struct {
 	Path   string
 	Cheats []Cheat
 
-	pre   []string         // unknown lines before the first cheat entry
 	extra map[int][]string // raw extra lines per original cheat index
 	tail  []string         // unknown lines after the last cheat entry
 	src   []int            // original cheat index per entry (for extras)

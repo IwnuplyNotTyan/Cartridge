@@ -345,9 +345,7 @@ func (m Model) renderGames(w int) string {
 
 func (m Model) renderMetaPane(w int) string {
 	lines := []string{titleFor(i18n.T("pane.meta"), m.focus == PaneMeta, w)}
-	for _, ln := range strings.Split(m.meta.View(), "\n") {
-		lines = append(lines, ln)
-	}
+	lines = append(lines, strings.Split(m.meta.View(), "\n")...)
 	return m.column(lines, w, 1, 0)
 }
 

@@ -240,7 +240,7 @@ func stemWords(s string) []string {
 	}
 	var out []string
 	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	}) {
 		if len(w) >= minFuzzyLen {
 			out = append(out, w)

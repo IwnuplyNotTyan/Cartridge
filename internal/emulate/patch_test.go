@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-func strp(s string) *string { return &s }
-
 func TestApplyPatchesOverlay(t *testing.T) {
 	base := []Recipe{{Name: "mesen-nes", Emulator: "mesen", Args: []string{"{rom}"}}}
 	emu := "mesen-new"
