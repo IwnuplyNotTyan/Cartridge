@@ -26,13 +26,33 @@ type Console struct {
 // Known consoles, ordered for display.
 var Consoles = []Console{
 	{ID: "nes", Name: "Nintendo Entertainment System", Short: "NES", Extensions: []string{".nes"}},
-	{ID: "snes", Name: "Super Nintendo", Short: "SNES", Extensions: []string{".sfc", ".smc"}},
+	{ID: "snes", Name: "Super Nintendo", Short: "SNES", Extensions: []string{".sfc", ".smc", ".fig"}},
 	{ID: "gb", Name: "Game Boy", Short: "GB", Extensions: []string{".gb"}},
 	{ID: "gbc", Name: "Game Boy Color", Short: "GBC", Extensions: []string{".gbc"}},
 	{ID: "gba", Name: "Game Boy Advance", Short: "GBA", Extensions: []string{".gba"}},
 	{ID: "genesis", Name: "Sega Genesis", Short: "MD", Extensions: []string{".gen", ".md", ".smd"}},
 	{ID: "gamegear", Name: "Sega Game Gear", Short: "GG", Extensions: []string{".gg"}},
-	{ID: "n64", Name: "Nintendo 64", Short: "N64", Extensions: []string{".n64", ".z64"}},
+	{ID: "mastersystem", Name: "Sega Master System", Short: "SMS", Extensions: []string{".sms"}},
+	{ID: "sega32x", Name: "Sega 32X", Short: "32X", Extensions: []string{".32x"}},
+	{ID: "sg-1000", Name: "Sega SG-1000", Short: "SG1K", Extensions: []string{".sg", ".sc"}},
+	{ID: "n64", Name: "Nintendo 64", Short: "N64", Extensions: []string{".n64", ".z64", ".v64"}},
+	{ID: "fds", Name: "Famicom Disk System", Short: "FDS", Extensions: []string{".fds"}},
+	{ID: "atari2600", Name: "Atari 2600", Short: "A26", Extensions: []string{".a26"}},
+	{ID: "atari7800", Name: "Atari 7800", Short: "A78", Extensions: []string{".a78"}},
+	{ID: "atarilynx", Name: "Atari Lynx", Short: "LYNX", Extensions: []string{".lnx", ".lyx"}},
+	{ID: "ngp", Name: "Neo Geo Pocket", Short: "NGP", Extensions: []string{".ngp"}},
+	{ID: "ngpc", Name: "Neo Geo Pocket Color", Short: "NGPC", Extensions: []string{".ngc", ".ngpc"}},
+	{ID: "pcengine", Name: "PC Engine / TurboGrafx-16", Short: "PCE", Extensions: []string{".pce", ".sgx"}},
+	{ID: "switch", Name: "Nintendo Switch", Short: "SW", Extensions: []string{".xci", ".nsp", ".nsz"}},
+	{ID: "3ds", Name: "Nintendo 3DS", Short: "3DS", Extensions: []string{".3ds", ".3dsx", ".cci", ".cxi"}},
+	{ID: "ds", Name: "Nintendo DS", Short: "DS", Extensions: []string{".nds", ".dsi"}},
+	{ID: "psx", Name: "Sony PlayStation", Short: "PS1", Extensions: []string{".pbp"}},
+	{ID: "psp", Name: "Sony PlayStation Portable", Short: "PSP", Extensions: []string{".cso", ".ppbp"}},
+	{ID: "gamecube", Name: "Nintendo GameCube", Short: "GC", Extensions: []string{".gcm", ".gcz"}},
+	{ID: "wii", Name: "Nintendo Wii", Short: "WII", Extensions: []string{".wbfs", ".rvz"}},
+	{ID: "dreamcast", Name: "Sega Dreamcast", Short: "DC", Extensions: []string{".gdi", ".cdi"}},
+	{ID: "wonderswan", Name: "Bandai WonderSwan", Short: "WS", Extensions: []string{".ws", ".wsc"}},
+	{ID: "virtualboy", Name: "Nintendo Virtual Boy", Short: "VB", Extensions: []string{".vb"}},
 }
 
 // Unknown is used when nothing matches.
@@ -87,7 +107,7 @@ func SupportedExtension(path string) bool {
 
 // junkZipExts are never ROMs inside archives: docs, images, music,
 // cheat/save files and the like. The zip fallback below (meant for ROMs
-// with unlisted extensions like .bin/.fds) must skip them, otherwise a
+// with unlisted extensions like .bin) must skip them, otherwise a
 // lone readme.txt becomes an "unknown console" game.
 var junkZipExts = map[string]bool{
 	".txt": true, ".nfo": true, ".diz": true, ".md": true, ".markdown": true,
@@ -344,7 +364,7 @@ func identifyZip(path, rawName string) (Game, error) {
 
 // pickZipEntry chooses the most plausible ROM inside a zip:
 // first known-extension entry (biggest wins), else the biggest file with
-// an unlisted extension (for ROMs like .bin/.fds).
+// an unlisted extension (for ROMs like .bin).
 // Mod files (.ips, ...) and archive junk (readme.txt, art, ...) never win:
 // a zip holding only those reports no ROM entries instead of becoming
 // an "unknown console" game.

@@ -4,8 +4,7 @@
 // and carries feature placeholders (cheats path, achievements and mods
 // support) shown in the UI. Recipes live in a JSON file, e.g.
 // ~/.config/cartridge/recipes.json, or in a directory of JSON files with
-// one recipe per file (a downloaded mesen-nes.json can be dropped there);
-// run with --recipe-example for a sample, --export-recipes DIR for files.
+// one recipe per file (a downloaded mesen-nes.json can be dropped there).
 //
 // Matching follows the list hierarchy: the first recipe from the top whose
 // scope matches the game wins. A scopeless recipe matches everything, so
@@ -544,70 +543,4 @@ func ExportRecipes(dir string, recipes []Recipe) error {
 		}
 	}
 	return nil
-}
-
-// Example returns a commented-shape sample document (notes describe fields).
-func Example() []Recipe {
-	return []Recipe{
-		{
-			Name:       "mesen-nes",
-			Consoles:   []string{"nes"},
-			Extensions: []string{".nes", ".fds"},
-			Emulator:   "mesen",
-			Args:       []string{"{rom}"},
-			Cheats:     Cheats{Supported: true, Path: "{emu_dir}/cheats/{title}.cht"},
-			Mods:       Mods{Supported: false},
-			Note:       "standalone NES emulator",
-		},
-		{
-			// Frontend data lives under ~/.config, not next to the binary
-			// (which may be an AppImage anywhere) — hence the ~/ path.
-			Name:         "retroarch-gba",
-			Consoles:     []string{"gba"},
-			Emulator:     "retroarch",
-			Args:         []string{"-L", "mgba_libretro.so", "{rom}"},
-			Cheats:       Cheats{Supported: true, Path: "~/.config/retroarch/cheats/{shortid}.cht"},
-			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
-			Mods:         Mods{Supported: true, Path: "{dir}/mods/{title}"},
-		},
-		{
-			// Multi-system frontend: one core per console, several where
-			// there is a choice (the first listed is the default {core}).
-			// core_names must match the frontend's folders; without an
-			// entry {core_name} falls back to the core file stem.
-			Name:     "retroarch-cores",
-			Consoles: []string{"nes", "snes", "gb", "gbc", "gba", "genesis", "gamegear", "n64"},
-			Emulator: "retroarch",
-			Args:     []string{"-L", "{core}", "{rom}"},
-			Cores: map[string][]string{
-				"nes":      {"nestopia_libretro.so", "mesen_libretro.so"},
-				"snes":     {"snes9x_libretro.so"},
-				"gb":       {"gambatte_libretro.so", "sameboy_libretro.so"},
-				"gbc":      {"gambatte_libretro.so", "sameboy_libretro.so"},
-				"gba":      {"mgba_libretro.so"},
-				"genesis":  {"genesis_plus_gx_libretro.so"},
-				"gamegear": {"genesis_plus_gx_libretro.so"},
-				"n64":      {"mupen64plus_next_libretro.so", "parallel_n64_libretro.so"},
-			},
-			CoreNames: map[string]string{
-				"nes":      "Nestopia",
-				"snes":     "Snes9x",
-				"gb":       "Gambatte",
-				"gbc":      "Gambatte",
-				"gba":      "mGBA",
-				"genesis":  "Genesis Plus GX",
-				"gamegear": "Genesis Plus GX",
-				"n64":      "Mupen64Plus-Next",
-			},
-			Cheats:       Cheats{Supported: true, Path: "~/.config/retroarch/cheats/{core_name}/{title}.cht"},
-			Achievements: Achievements{Supported: true, Note: "via RetroAchievements login"},
-			Note:         "multi-system frontend, per-console cores",
-		},
-	}
-}
-
-// ExampleJSON renders Example as a pretty recipes document.
-func ExampleJSON() []byte {
-	data, _ := json.MarshalIndent(file{Recipes: Example()}, "", "  ")
-	return append(data, '\n')
 }

@@ -389,13 +389,3 @@ func SavePatches(path string, patches []RecipePatch) error {
 	}
 	return os.Rename(tmp, path)
 }
-
-// ExamplePatches renders a sample patches document.
-func ExamplePatches() []byte {
-	emu := "mesen"
-	args := []string{"{rom}", "--patch", "{dir}/patches/{title}.ips"}
-	data, _ := json.MarshalIndent(patchFile{Patches: []RecipePatch{
-		{Recipe: "mesen-nes", Emulator: &emu, Args: &args},
-	}}, "", "  ")
-	return append(data, '\n')
-}

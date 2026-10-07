@@ -242,23 +242,6 @@ func TestSaveRecipeRoundTrip(t *testing.T) {
 	}
 }
 
-func TestExportExamplesRoundTrip(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "examples")
-	if err := ExportRecipes(dir, Example()); err != nil {
-		t.Fatal(err)
-	}
-	got, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != len(Example()) {
-		t.Fatalf("exported %d, loaded %d", len(Example()), len(got))
-	}
-	if err := ExportRecipes("", Example()); err == nil {
-		t.Fatalf("expected error for empty dir")
-	}
-}
-
 func TestLoadStrict(t *testing.T) {
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "bad.json")
@@ -370,23 +353,6 @@ func TestExpandTilde(t *testing.T) {
 	}
 }
 
-func TestExampleCheatPathsResolve(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	for _, r := range Example() {
-		if !strings.HasPrefix(r.Name, "retroarch") {
-			continue
-		}
-		got, err := r.Expand(r.Cheats.Path, nesGame())
-		if err != nil {
-			t.Fatalf("%s cheats path must expand: %v", r.Name, err)
-		}
-		if !filepath.IsAbs(got) {
-			t.Fatalf("%s cheats path must be absolute: %q", r.Name, got)
-		}
-	}
-}
-
 func TestCoreNameFor(t *testing.T) {
 	r := Recipe{Name: "ra",
 		Cores: map[string][]string{
@@ -466,20 +432,5 @@ func TestPatchCoresApply(t *testing.T) {
 	}
 	if cmd.Args[2] != "b.so" {
 		t.Fatalf("patched core not used: %q", cmd.Args)
-	}
-}
-
-func TestExampleParses(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "recipes.json")
-	if err := os.WriteFile(p, ExampleJSON(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	rs, err := Load(p)
-	if err != nil {
-		t.Fatalf("example must load: %v", err)
-	}
-	if len(rs) != 3 {
-		t.Fatalf("example has %d recipes", len(rs))
 	}
 }

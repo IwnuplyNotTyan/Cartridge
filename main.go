@@ -96,8 +96,6 @@ func main() {
 	cfgPath := flag.String("config", "", i18n.T("flag.config"))
 	recipesPath := flag.String("recipes", "", i18n.T("flag.recipes"))
 	patchesPath := flag.String("patches", "", i18n.T("flag.patches"))
-	recipeExample := flag.Bool("recipe-example", false, i18n.T("flag.recipe_example"))
-	exportRecipes := flag.String("export-recipes", "", i18n.T("flag.export_recipes"))
 	printOnly := flag.Bool("print", false, i18n.T("flag.print"))
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "%s\n%s\n\n",
@@ -105,19 +103,6 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-
-	if *recipeExample {
-		fmt.Printf("%s", emulate.ExampleJSON())
-		return
-	}
-
-	if strings.TrimSpace(*exportRecipes) != "" {
-		if err := emulate.ExportRecipes(strings.TrimSpace(*exportRecipes), emulate.Example()); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", i18n.T("main.export_fail", err))
-			os.Exit(1)
-		}
-		return
-	}
 
 	cfg, err := config.Resolve(*dir, *lib, *lang, *cfgPath, *recipesPath)
 	if err != nil {
