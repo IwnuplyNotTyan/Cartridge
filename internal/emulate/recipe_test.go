@@ -142,6 +142,123 @@ func TestSaveRecipesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadSingleRecipeShapes(t *testing.T) {
+	dir := t.TempDir()
+	// One recipe object: the downloadable single-file shape.
+	single := filepath.Join(dir, "mesen-nes.json")
+	if err := os.WriteFile(single, []byte(`{"name": "mesen-nes", "emulator": "mesen", "args": ["{rom}"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(single)
+	if err != nil || len(got) != 1 || got[0].Name != "mesen-nes" {
+		t.Fatalf("single object load = %+v, %v", got, err)
+	}
+	// Bare array shape.
+	arr := filepath.Join(dir, "arr.json")
+	if err := os.WriteFile(arr, []byte(`[{"name": "a", "emulator": "e1"}, {"name": "b", "emulator": "e2"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(arr)
+	if err != nil || len(got) != 2 || got[1].Name != "b" {
+		t.Fatalf("array load = %+v, %v", got, err)
+	}
+	// Empty name defaults to the emulator binary.
+	noname := filepath.Join(dir, "noname.json")
+	if err := os.WriteFile(noname, []byte(`{"emulator": "e1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(noname)
+	if err != nil || len(got) != 1 || got[0].Name != "e1" {
+		t.Fatalf("default name = %+v, %v", got, err)
+	}
+}
+
+func TestLoadRecipesDir(t *testing.T) {
+	dir := t.TempDir()
+	recipes := filepath.Join(dir, "recipes")
+	if err := ExportRecipes(recipes, []Recipe{
+		{Name: "b-second", Emulator: "e2"},
+		{Name: "a-first", Emulator: "e1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A stray non-JSON file must be ignored.
+	if err := os.WriteFile(filepath.Join(recipes, "notes.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(recipes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Directory order is filename-sorted: a-first.json wins.
+	if len(got) != 2 || got[0].Name != "a-first" || got[1].Name != "b-second" {
+		t.Fatalf("dir load order broken: %+v", got)
+	}
+	// Mixed shapes in one dir: document + single object.
+	mixed := t.TempDir()
+	if err := SaveRecipes(filepath.Join(mixed, "00-doc.json"), []Recipe{{Name: "doc", Emulator: "e0"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveRecipe(mixed, Recipe{Name: "solo", Emulator: "e1"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(mixed)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("mixed dir load = %+v, %v", got, err)
+	}
+	if got[0].Name != "doc" || got[1].Name != "solo" {
+		t.Fatalf("mixed dir order broken: %+v", got)
+	}
+}
+
+func TestSaveRecipeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	r := Recipe{Name: "mesen-nes", Consoles: []string{"nes"}, Emulator: "mesen", Args: []string{"{rom}"}}
+	// Into a directory: lands as <dir>/mesen-nes.json.
+	if err := SaveRecipe(dir, r); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(filepath.Join(dir, "mesen-nes.json"))
+	if err != nil || len(got) != 1 || got[0].Emulator != "mesen" {
+		t.Fatalf("dir save/load = %+v, %v", got, err)
+	}
+	// Explicit file path: single object shape, still loadable.
+	fp := filepath.Join(dir, "custom.json")
+	if err := SaveRecipe(fp, r); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(fp)
+	if err != nil || len(got) != 1 || got[0].Name != "mesen-nes" {
+		t.Fatalf("file save/load = %+v, %v", got, err)
+	}
+	if got := RecipeFileName("retroarch cores!"); got != "retroarch-cores.json" {
+		t.Fatalf("RecipeFileName = %q", got)
+	}
+	if err := SaveRecipe("", r); err == nil {
+		t.Fatalf("expected error for empty path")
+	}
+	if err := SaveRecipe(dir, Recipe{Name: "noemu"}); err == nil {
+		t.Fatalf("expected error for missing emulator")
+	}
+}
+
+func TestExportExamplesRoundTrip(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "examples")
+	if err := ExportRecipes(dir, Example()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(Example()) {
+		t.Fatalf("exported %d, loaded %d", len(Example()), len(got))
+	}
+	if err := ExportRecipes("", Example()); err == nil {
+		t.Fatalf("expected error for empty dir")
+	}
+}
+
 func TestLoadStrict(t *testing.T) {
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "bad.json")

@@ -20,7 +20,7 @@
 
 # 💖 Usage
 
-Write `~/.config/cartridge/recipe.json`, examples can be find [here](https://github.com/iwnuplynottyan/cartridge/tree/master/_examples)
+Write `~/.config/cartridge/recipes.json` or a recipes directory (one recipe per JSON file - just drop a downloaded file in), examples can be find [here](https://github.com/iwnuplynottyan/cartridge/tree/master/_examples)
 
 Add games, mods (aka hack's) and cheats, install emulators and then play!
 

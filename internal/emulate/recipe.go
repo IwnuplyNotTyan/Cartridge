@@ -3,7 +3,9 @@
 // A recipe scopes an emulator to specific games, consoles or file formats
 // and carries feature placeholders (cheats path, achievements and mods
 // support) shown in the UI. Recipes live in a JSON file, e.g.
-// ~/.config/cartridge/recipes.json; run with --recipe-example for a sample.
+// ~/.config/cartridge/recipes.json, or in a directory of JSON files with
+// one recipe per file (a downloaded mesen-nes.json can be dropped there);
+// run with --recipe-example for a sample, --export-recipes DIR for files.
 //
 // Matching follows the list hierarchy: the first recipe from the top whose
 // scope matches the game wins. A scopeless recipe matches everything, so
@@ -133,12 +135,56 @@ type file struct {
 	Recipes []Recipe `json:"recipes"`
 }
 
-// Load reads path; a missing file yields no recipes and no error.
+// Load reads path which may be a JSON file or a directory of JSON files.
+// A missing path yields no recipes and no error.
+//
+// Accepted file shapes (so a single recipe can be shared as one file):
+//
+//	{"recipes": [...]}  — the classic document,
+//	[...]               — a bare recipe array,
+//	{...}               — one recipe object (e.g. mesen-nes.json).
+//
+// A directory is a drop-in folder: every *.json file (sorted by name) may
+// use any of the shapes above and all recipes concatenate in order.
 // Unknown fields are rejected to catch authoring typos early.
 func Load(path string) ([]Recipe, error) {
 	if path == "" {
 		return nil, nil
 	}
+	st, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if st.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		var out []Recipe
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := strings.ToLower(e.Name())
+			if !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			rs, err := loadRecipeFile(filepath.Join(path, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, rs...)
+		}
+		return out, nil
+	}
+	return loadRecipeFile(path)
+}
+
+// loadRecipeFile reads one recipe file in any accepted shape.
+func loadRecipeFile(path string) ([]Recipe, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -146,14 +192,34 @@ func Load(path string) ([]Recipe, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, nil
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var f file
-	if err := dec.Decode(&f); err != nil {
+	if err := dec.Decode(&f); err == nil {
+		return checkRecipes(f.Recipes, path)
+	}
+	dec2 := json.NewDecoder(bytes.NewReader(data))
+	dec2.DisallowUnknownFields()
+	var arr []Recipe
+	if err := dec2.Decode(&arr); err == nil {
+		return checkRecipes(arr, path)
+	}
+	dec3 := json.NewDecoder(bytes.NewReader(data))
+	dec3.DisallowUnknownFields()
+	var single Recipe
+	if err := dec3.Decode(&single); err != nil {
 		return nil, fmt.Errorf("parse recipes %s: %w", path, err)
 	}
-	for i := range f.Recipes {
-		r := &f.Recipes[i]
+	return checkRecipes([]Recipe{single}, path)
+}
+
+// checkRecipes validates recipes and defaults an empty name to the emulator.
+func checkRecipes(rs []Recipe, path string) ([]Recipe, error) {
+	for i := range rs {
+		r := &rs[i]
 		if strings.TrimSpace(r.Emulator) == "" {
 			return nil, fmt.Errorf("recipes %s: recipe #%d has no emulator", path, i+1)
 		}
@@ -161,7 +227,7 @@ func Load(path string) ([]Recipe, error) {
 			r.Name = r.Emulator
 		}
 	}
-	return f.Recipes, nil
+	return rs, nil
 }
 
 // Match picks the recipe for g by list hierarchy: the first recipe from
@@ -405,6 +471,79 @@ func SaveRecipes(path string, recipes []Recipe) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// RecipeFileName sanitizes a recipe name for use as a single-recipe file
+// inside a recipes directory: "retroarch cores" becomes
+// "retroarch-cores.json".
+func RecipeFileName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteRune('-')
+		default:
+			b.WriteRune('_')
+		}
+	}
+	s := strings.Trim(b.String(), "._")
+	if s == "" {
+		s = "recipe"
+	}
+	return s + ".json"
+}
+
+// SaveRecipe writes one recipe as a single downloadable JSON object.
+// When path is an existing directory the recipe lands as
+// <dir>/<recipe-name>.json; otherwise path is the target file itself.
+// Parent directories are created.
+func SaveRecipe(path string, r Recipe) error {
+	if strings.TrimSpace(r.Emulator) == "" {
+		return fmt.Errorf("recipe %q has no emulator", r.Name)
+	}
+	if strings.TrimSpace(r.Name) == "" {
+		r.Name = r.Emulator
+	}
+	target := path
+	if target == "" {
+		return fmt.Errorf("empty recipes path")
+	}
+	if st, err := os.Stat(target); err == nil && st.IsDir() {
+		target = filepath.Join(target, RecipeFileName(r.Name))
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, target)
+}
+
+// ExportRecipes writes every recipe as its own JSON file into dir
+// (<recipe-name>.json each), so recipes can be shared by a single file
+// download. The directory is created; existing *.json files with the same
+// names are overwritten, other files are left alone.
+func ExportRecipes(dir string, recipes []Recipe) error {
+	if strings.TrimSpace(dir) == "" {
+		return fmt.Errorf("empty recipes path")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, r := range recipes {
+		if err := SaveRecipe(dir, r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Example returns a commented-shape sample document (notes describe fields).
