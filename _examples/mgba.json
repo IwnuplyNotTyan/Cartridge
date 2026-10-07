@@ -1,0 +1,28 @@
+
+    {
+      "name": "MGBA",
+      "consoles": [
+        "gba"
+      ],
+      "extensions": [
+        ".gbm",
+        ".gba"
+      ],
+      "emulator": "mgba",
+      "args": [
+        "{rom}"
+      ],
+      "cheats": {
+        "supported": true,
+        "path": "{emu_dir}/cheats/{title}.cht"
+      },
+      "achievements": {
+        "supported": false,
+        "note": "planned"
+      },
+      "mods": {
+        "supported": true,
+        "path": "{dir}/mods/{title}"
+      },
+      "note": "..."
+    },

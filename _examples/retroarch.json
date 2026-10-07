@@ -1,0 +1,860 @@
+{
+  "name": "RetroArch",
+  "consoles": [
+    "nes",
+    "snes",
+    "gb",
+    "gbc",
+    "gba",
+    "genesis",
+    "gamegear",
+    "n64",
+    "mastersystem",
+    "sg1000",
+    "segacd",
+    "sega32x",
+    "saturn",
+    "dreamcast",
+    "gamecube",
+    "wii",
+    "nds",
+    "3ds",
+    "psx",
+    "ps2",
+    "psp",
+    "xbox",
+    "pcengine",
+    "pcenginecd",
+    "supergrafx",
+    "pcfx",
+    "3do",
+    "cdi",
+    "neogeo",
+    "neogeocd",
+    "arcade",
+    "atari2600",
+    "atari5200",
+    "atari7800",
+    "atari800",
+    "atarist",
+    "lynx",
+    "jaguar",
+    "ngp",
+    "ngpc",
+    "wonderswan",
+    "wonderswancolor",
+    "virtualboy",
+    "pokemini",
+    "supervision",
+    "megaduck",
+    "colecovision",
+    "intellivision",
+    "odyssey2",
+    "channelf",
+    "vectrex",
+    "scv",
+    "cassettevision",
+    "gameandwatch",
+    "tamagotchi",
+    "gam4980",
+    "msx",
+    "c64",
+    "c128",
+    "vic20",
+    "plus4",
+    "pet",
+    "cbm2",
+    "amiga",
+    "amstrad",
+    "zxspectrum",
+    "zx81",
+    "dos",
+    "pc",
+    "x68000",
+    "pc98",
+    "pc88",
+    "x1",
+    "apple2",
+    "macintosh",
+    "palm",
+    "bbcmicro",
+    "thomson",
+    "enterprise",
+    "galaksija",
+    "p2000",
+    "bk",
+    "uzebox",
+    "arduboy",
+    "vmu",
+    "riscv",
+    "pico8",
+    "tic80",
+    "wasm4",
+    "lowresnx",
+    "uxn",
+    "uw8",
+    "vircon32",
+    "chip8",
+    "doom",
+    "doom3",
+    "quake",
+    "quake2",
+    "quake3",
+    "wolf3d",
+    "scummvm",
+    "rpgmaker",
+    "cavestory",
+    "flashback",
+    "xrick",
+    "tombraider",
+    "outrun",
+    "tyrian",
+    "startrek",
+    "pal",
+    "onscripter",
+    "lutro",
+    "chailove",
+    "bennugd",
+    "puzzlescript",
+    "j2me",
+    "laserdisc",
+    "zmachine",
+    "oberon",
+    "games",
+    "media",
+    "tools",
+    "tests"
+  ],
+  "emulator": "retroarch",
+  "args": [
+    "-L",
+    "{core}",
+    "{rom}"
+  ],
+  "cheats": {
+    "supported": true,
+    "path": "~/.config/retroarch/cheats/{core_name}/{title}.cht"
+  },
+  "achievements": {
+    "supported": true,
+    "note": "via RetroAchievements login"
+  },
+  "mods": {
+    "supported": true
+  },
+  "note": "multi-system frontend, per-console cores",
+  "cores": {
+    "3do": [
+      "opera_libretro.so"
+    ],
+    "3ds": [
+      "citra_libretro.so",
+      "citra_canary_libretro.so",
+      "citra2018_libretro.so",
+      "azahar_libretro.so",
+      "panda3ds_libretro.so"
+    ],
+    "amiga": [
+      "puae_libretro.so",
+      "puae2021_libretro.so",
+      "fsuae_libretro.so",
+      "uae4arm_libretro.so"
+    ],
+    "amstrad": [
+      "cap32_libretro.so",
+      "crocods_libretro.so"
+    ],
+    "apple2": [
+      "applewin_libretro.so"
+    ],
+    "arcade": [
+      "fbneo_libretro.so",
+      "fbneo_cps12_libretro.so",
+      "fbalpha2012_libretro.so",
+      "fbalpha2012_cps1_libretro.so",
+      "fbalpha2012_cps2_libretro.so",
+      "fbalpha2012_cps3_libretro.so",
+      "mame_libretro.so",
+      "mamearcade_libretro.so",
+      "mame2016_libretro.so",
+      "mame2015_libretro.so",
+      "mame2010_libretro.so",
+      "mame2009_libretro.so",
+      "mame2003_libretro.so",
+      "mame2003_plus_libretro.so",
+      "mame2003_midway_libretro.so",
+      "mame2000_libretro.so",
+      "hbmame_libretro.so",
+      "ume2015_libretro.so",
+      "mamemess_libretro.so",
+      "mess2015_libretro.so",
+      "dice_libretro.so"
+    ],
+    "arduboy": [
+      "ardens_libretro.so",
+      "arduous_libretro.so"
+    ],
+    "atari2600": [
+      "stella_libretro.so",
+      "stella2023_libretro.so",
+      "stella2014_libretro.so"
+    ],
+    "atari5200": [
+      "a5200_libretro.so",
+      "atari800_libretro.so"
+    ],
+    "atari7800": [
+      "prosystem_libretro.so"
+    ],
+    "atari800": [
+      "atari800_libretro.so"
+    ],
+    "atarist": [
+      "hatari_libretro.so"
+    ],
+    "bbcmicro": [
+      "b2_libretro.so"
+    ],
+    "bennugd": [
+      "bennugd_libretro.so"
+    ],
+    "bk": [
+      "bk_libretro.so"
+    ],
+    "c128": [
+      "vice_x128_libretro.so"
+    ],
+    "c64": [
+      "vice_x64sc_libretro.so",
+      "vice_x64_libretro.so",
+      "vice_x64dtv_libretro.so",
+      "vice_xscpu64_libretro.so",
+      "x64sdl_libretro.so",
+      "frodo_libretro.so"
+    ],
+    "cassettevision": [
+      "pd777_libretro.so"
+    ],
+    "cavestory": [
+      "nxengine_libretro.so",
+      "doukutsu_rs_libretro.so"
+    ],
+    "cbm2": [
+      "vice_xcbm2_libretro.so",
+      "vice_xcbm5x0_libretro.so"
+    ],
+    "cdi": [
+      "same_cdi_libretro.so",
+      "cdi2015_libretro.so"
+    ],
+    "chailove": [
+      "chailove_libretro.so"
+    ],
+    "channelf": [
+      "freechaf_libretro.so"
+    ],
+    "chip8": [
+      "emux_chip8_libretro.so",
+      "jaxe_libretro.so"
+    ],
+    "colecovision": [
+      "gearcoleco_libretro.so",
+      "bluemsx_libretro.so",
+      "jollycv_libretro.so"
+    ],
+    "doom": [
+      "prboom_libretro.so"
+    ],
+    "doom3": [
+      "boom3_libretro.so",
+      "boom3_xp_libretro.so"
+    ],
+    "dos": [
+      "dosbox_pure_libretro.so",
+      "dosbox_core_libretro.so",
+      "dosbox_svn_libretro.so",
+      "dosbox_svn_ce_libretro.so",
+      "dosbox_libretro.so"
+    ],
+    "dreamcast": [
+      "flycast_libretro.so",
+      "flycast_gles2_libretro.so",
+      "retrodream_libretro.so"
+    ],
+    "enterprise": [
+      "ep128emu_core_libretro.so"
+    ],
+    "flashback": [
+      "reminiscence_libretro.so"
+    ],
+    "galaksija": [
+      "galaksija_libretro.so"
+    ],
+    "gam4980": [
+      "gam4980_libretro.so"
+    ],
+    "gameandwatch": [
+      "gw_libretro.so"
+    ],
+    "gamecube": [
+      "dolphin_libretro.so",
+      "dolphin_launcher_libretro.so",
+      "ishiiruka_libretro.so"
+    ],
+    "gamegear": [
+      "genesis_plus_gx_libretro.so",
+      "genesis_plus_gx_wide_libretro.so",
+      "smsplus_libretro.so",
+      "gearsystem_libretro.so",
+      "picodrive_libretro.so",
+      "emux_sms_libretro.so"
+    ],
+    "games": [
+      "2048_libretro.so",
+      "anarch_libretro.so",
+      "craft_libretro.so",
+      "cruzes_libretro.so",
+      "dinothawr_libretro.so",
+      "gong_libretro.so",
+      "jumpnbump_libretro.so",
+      "mrboom_libretro.so",
+      "numero_libretro.so",
+      "pascal_pong_libretro.so",
+      "stonesoup_libretro.so",
+      "superbroswar_libretro.so",
+      "syobonaction_libretro.so",
+      "thepowdertoy_libretro.so",
+      "3dengine_libretro.so"
+    ],
+    "gb": [
+      "gambatte_libretro.so",
+      "sameboy_libretro.so",
+      "mgba_libretro.so",
+      "gearboy_libretro.so",
+      "tgbdual_libretro.so",
+      "DoubleCherryGB_libretro.so",
+      "emux_gb_libretro.so",
+      "fixgb_libretro.so",
+      "boytacean_libretro.so",
+      "vbam_libretro.so",
+      "skyemu_libretro.so",
+      "mesen-s_libretro.so"
+    ],
+    "gba": [
+      "mgba_libretro.so",
+      "gpsp_libretro.so",
+      "vbam_libretro.so",
+      "vba_next_libretro.so",
+      "mednafen_gba_libretro.so",
+      "meteor_libretro.so",
+      "tempgba_libretro.so",
+      "skyemu_libretro.so"
+    ],
+    "gbc": [
+      "gambatte_libretro.so",
+      "sameboy_libretro.so",
+      "mgba_libretro.so",
+      "gearboy_libretro.so",
+      "tgbdual_libretro.so",
+      "DoubleCherryGB_libretro.so",
+      "emux_gb_libretro.so",
+      "fixgb_libretro.so",
+      "boytacean_libretro.so",
+      "vbam_libretro.so",
+      "skyemu_libretro.so",
+      "mesen-s_libretro.so"
+    ],
+    "genesis": [
+      "genesis_plus_gx_libretro.so",
+      "genesis_plus_gx_wide_libretro.so",
+      "picodrive_libretro.so",
+      "blastem_libretro.so",
+      "clownmdemu_libretro.so"
+    ],
+    "intellivision": [
+      "freeintv_libretro.so",
+      "FreeIntvTSOverlay_libretro.so"
+    ],
+    "j2me": [
+      "freej2me_libretro.so",
+      "squirreljme_libretro.so"
+    ],
+    "jaguar": [
+      "virtualjaguar_libretro.so"
+    ],
+    "laserdisc": [
+      "daphne_libretro.so",
+      "dirksimple_libretro.so"
+    ],
+    "lowresnx": [
+      "lowresnx_libretro.so"
+    ],
+    "lutro": [
+      "lutro_libretro.so"
+    ],
+    "lynx": [
+      "handy_libretro.so",
+      "holani_libretro.so",
+      "mednafen_lynx_libretro.so"
+    ],
+    "macintosh": [
+      "minivmac_libretro.so"
+    ],
+    "mastersystem": [
+      "genesis_plus_gx_libretro.so",
+      "genesis_plus_gx_wide_libretro.so",
+      "smsplus_libretro.so",
+      "gearsystem_libretro.so",
+      "picodrive_libretro.so",
+      "emux_sms_libretro.so",
+      "blastem_libretro.so"
+    ],
+    "media": [
+      "ffmpeg_libretro.so",
+      "mpv_libretro.so",
+      "imageviewer_libretro.so",
+      "gme_libretro.so",
+      "pocketcdg_libretro.so",
+      "redbook_libretro.so"
+    ],
+    "megaduck": [
+      "sameduck_libretro.so"
+    ],
+    "msx": [
+      "bluemsx_libretro.so",
+      "fmsx_libretro.so"
+    ],
+    "n64": [
+      "mupen64plus_next_libretro.so",
+      "mupen64plus_next_develop_libretro.so",
+      "mupen64plus_next_gles2_libretro.so",
+      "mupen64plus_next_gles3_libretro.so",
+      "parallel_n64_libretro.so",
+      "parallel_n64_debug_libretro.so"
+    ],
+    "nds": [
+      "melonds_libretro.so",
+      "melondsds_libretro.so",
+      "desmume_libretro.so",
+      "desmume2015_libretro.so",
+      "noods_libretro.so"
+    ],
+    "neogeo": [
+      "geolith_libretro.so",
+      "fbneo_neogeo_libretro.so",
+      "fbalpha2012_neogeo_libretro.so",
+      "fbneo_libretro.so"
+    ],
+    "neogeocd": [
+      "neocd_libretro.so"
+    ],
+    "nes": [
+      "nestopia_libretro.so",
+      "mesen_libretro.so",
+      "fceumm_libretro.so",
+      "quicknes_libretro.so",
+      "bnes_libretro.so",
+      "emux_nes_libretro.so",
+      "fixnes_libretro.so"
+    ],
+    "ngp": [
+      "mednafen_ngp_libretro.so",
+      "race_libretro.so"
+    ],
+    "ngpc": [
+      "mednafen_ngp_libretro.so",
+      "race_libretro.so"
+    ],
+    "oberon": [
+      "oberon_libretro.so"
+    ],
+    "odyssey2": [
+      "o2em_libretro.so"
+    ],
+    "onscripter": [
+      "onscripter_libretro.so",
+      "onsyuri_libretro.so"
+    ],
+    "outrun": [
+      "cannonball_libretro.so"
+    ],
+    "p2000": [
+      "m2000_libretro.so"
+    ],
+    "pal": [
+      "sdlpal_libretro.so"
+    ],
+    "palm": [
+      "mu_libretro.so"
+    ],
+    "pc": [
+      "pcem_libretro.so",
+      "qemu_libretro.so",
+      "virtualxt_libretro.so"
+    ],
+    "pc88": [
+      "quasi88_libretro.so"
+    ],
+    "pc98": [
+      "np2kai_libretro.so",
+      "nekop2_libretro.so"
+    ],
+    "pcengine": [
+      "mednafen_pce_libretro.so",
+      "mednafen_pce_fast_libretro.so",
+      "mednafen_supergrafx_libretro.so",
+      "geargrafx_libretro.so"
+    ],
+    "pcenginecd": [
+      "mednafen_pce_libretro.so",
+      "mednafen_pce_fast_libretro.so",
+      "mednafen_supergrafx_libretro.so",
+      "geargrafx_libretro.so"
+    ],
+    "pcfx": [
+      "mednafen_pcfx_libretro.so"
+    ],
+    "pet": [
+      "vice_xpet_libretro.so"
+    ],
+    "pico8": [
+      "fake08_libretro.so",
+      "retro8_libretro.so"
+    ],
+    "plus4": [
+      "vice_xplus4_libretro.so"
+    ],
+    "pokemini": [
+      "pokemini_libretro.so"
+    ],
+    "ps2": [
+      "pcsx2_libretro.so",
+      "play_libretro.so"
+    ],
+    "psp": [
+      "ppsspp_libretro.so"
+    ],
+    "psx": [
+      "duckstation_libretro.so",
+      "swanstation_libretro.so",
+      "pcsx_rearmed_libretro.so",
+      "pcsx_rearmed_neon_libretro.so",
+      "pcsx_rearmed_interpreter_libretro.so",
+      "mednafen_psx_libretro.so",
+      "mednafen_psx_hw_libretro.so",
+      "pcsx1_libretro.so",
+      "rustation_libretro.so"
+    ],
+    "puzzlescript": [
+      "puzzlescript_libretro.so"
+    ],
+    "quake": [
+      "tyrquake_libretro.so"
+    ],
+    "quake2": [
+      "vitaquake2_libretro.so",
+      "vitaquake2-rogue_libretro.so",
+      "vitaquake2-xatrix_libretro.so",
+      "vitaquake2-zaero_libretro.so"
+    ],
+    "quake3": [
+      "vitaquake3_libretro.so"
+    ],
+    "riscv": [
+      "rvvm_libretro.so"
+    ],
+    "rpgmaker": [
+      "easyrpg_libretro.so",
+      "mkxp-z_libretro.so"
+    ],
+    "saturn": [
+      "mednafen_saturn_libretro.so",
+      "kronos_libretro.so",
+      "yabasanshiro_libretro.so",
+      "yabause_libretro.so"
+    ],
+    "scummvm": [
+      "scummvm_libretro.so"
+    ],
+    "scv": [
+      "emuscv_libretro.so"
+    ],
+    "sega32x": [
+      "picodrive_libretro.so"
+    ],
+    "segacd": [
+      "genesis_plus_gx_libretro.so",
+      "genesis_plus_gx_wide_libretro.so",
+      "picodrive_libretro.so",
+      "clownmdemu_libretro.so"
+    ],
+    "sg1000": [
+      "gearsystem_libretro.so",
+      "genesis_plus_gx_libretro.so",
+      "bluemsx_libretro.so"
+    ],
+    "snes": [
+      "snes9x_libretro.so",
+      "bsnes_libretro.so",
+      "bsnes_hd_beta_libretro.so",
+      "bsnes-jg_libretro.so",
+      "bsnes_cplusplus98_libretro.so",
+      "bsnes_mercury_accuracy_libretro.so",
+      "bsnes_mercury_balanced_libretro.so",
+      "bsnes_mercury_performance_libretro.so",
+      "bsnes2014_accuracy_libretro.so",
+      "bsnes2014_balanced_libretro.so",
+      "bsnes2014_performance_libretro.so",
+      "mesen-s_libretro.so",
+      "higan_sfc_libretro.so",
+      "higan_sfc_balanced_libretro.so",
+      "snes9x2002_libretro.so",
+      "snes9x2005_libretro.so",
+      "snes9x2005_plus_libretro.so",
+      "snes9x2010_libretro.so",
+      "mednafen_snes_libretro.so",
+      "mednafen_supafaust_libretro.so",
+      "chimerasnes_libretro.so"
+    ],
+    "startrek": [
+      "vitavoyager_libretro.so"
+    ],
+    "supergrafx": [
+      "mednafen_supergrafx_libretro.so",
+      "geargrafx_libretro.so"
+    ],
+    "supervision": [
+      "potator_libretro.so"
+    ],
+    "tamagotchi": [
+      "tamalibretro_libretro.so"
+    ],
+    "tests": [
+      "00_example_libretro.so",
+      "advanced_tests_libretro.so",
+      "test_libretro.so",
+      "test_netplay_libretro.so",
+      "testaudio_callback_libretro.so",
+      "testaudio_no_callback_libretro.so",
+      "testaudio_playback_wav_libretro.so",
+      "testgl_libretro.so",
+      "testgl_ff_libretro.so",
+      "testgl_compute_shaders_libretro.so",
+      "testinput_buttontest_libretro.so",
+      "testretroluxury_libretro.so",
+      "testsw_libretro.so",
+      "testsw_vram_libretro.so",
+      "testvulkan_libretro.so",
+      "testvulkan_async_compute_libretro.so",
+      "vidtest_libretro.so"
+    ],
+    "thomson": [
+      "theodore_libretro.so"
+    ],
+    "tic80": [
+      "tic80_libretro.so"
+    ],
+    "tombraider": [
+      "openlara_libretro.so"
+    ],
+    "tools": [
+      "moonlight_libretro.so",
+      "remotejoy_libretro.so",
+      "romcleaner_libretro.so",
+      "mcsoftserve_libretro.so",
+      "simcp_libretro.so"
+    ],
+    "tyrian": [
+      "opentyrian_libretro.so"
+    ],
+    "uw8": [
+      "uw8_libretro.so"
+    ],
+    "uxn": [
+      "uxn_libretro.so"
+    ],
+    "uzebox": [
+      "uzem_libretro.so"
+    ],
+    "vectrex": [
+      "vecx_libretro.so"
+    ],
+    "vic20": [
+      "vice_xvic_libretro.so"
+    ],
+    "vircon32": [
+      "vircon32_libretro.so"
+    ],
+    "virtualboy": [
+      "mednafen_vb_libretro.so"
+    ],
+    "vmu": [
+      "vemulator_libretro.so"
+    ],
+    "wasm4": [
+      "wasm4_libretro.so"
+    ],
+    "wii": [
+      "dolphin_libretro.so",
+      "dolphin_launcher_libretro.so",
+      "ishiiruka_libretro.so"
+    ],
+    "wolf3d": [
+      "ecwolf_libretro.so"
+    ],
+    "wonderswan": [
+      "mednafen_wswan_libretro.so"
+    ],
+    "wonderswancolor": [
+      "mednafen_wswan_libretro.so"
+    ],
+    "x1": [
+      "x1_libretro.so"
+    ],
+    "x68000": [
+      "px68k_libretro.so"
+    ],
+    "xbox": [
+      "directxbox_libretro.so"
+    ],
+    "xrick": [
+      "xrick_libretro.so"
+    ],
+    "zmachine": [
+      "mojozork_libretro.so"
+    ],
+    "zx81": [
+      "81_libretro.so"
+    ],
+    "zxspectrum": [
+      "fuse_libretro.so",
+      "vaporspec_libretro.so"
+    ]
+  },
+  "core_names": {
+    "3do": "Opera",
+    "3ds": "Citra",
+    "amiga": "PUAE",
+    "amstrad": "Caprice32",
+    "apple2": "AppleWin",
+    "arcade": "FinalBurn Neo",
+    "arduboy": "Ardens",
+    "atari2600": "Stella",
+    "atari5200": "a5200",
+    "atari7800": "ProSystem",
+    "atari800": "Atari800",
+    "atarist": "Hatari",
+    "bbcmicro": "B2",
+    "bennugd": "BennuGD",
+    "bk": "BK",
+    "c128": "VICE x128",
+    "c64": "VICE x64sc",
+    "cassettevision": "PD777",
+    "cavestory": "NXEngine",
+    "cbm2": "VICE xcbm2",
+    "cdi": "SAME_CDI",
+    "chailove": "ChaiLove",
+    "channelf": "FreeChaF",
+    "chip8": "Emux CHIP-8",
+    "colecovision": "Gearcoleco",
+    "doom": "PrBoom",
+    "doom3": "Boom3",
+    "dos": "DOSBox Pure",
+    "dreamcast": "Flycast",
+    "enterprise": "ep128emu",
+    "flashback": "REminiscence",
+    "galaksija": "galaksija",
+    "gam4980": "GAM4980",
+    "gameandwatch": "Game & Watch",
+    "gamecube": "Dolphin",
+    "gamegear": "Genesis Plus GX",
+    "games": "2048",
+    "gb": "Gambatte",
+    "gba": "mGBA",
+    "gbc": "Gambatte",
+    "genesis": "Genesis Plus GX",
+    "intellivision": "FreeIntv",
+    "j2me": "FreeJ2ME",
+    "jaguar": "Virtual Jaguar",
+    "laserdisc": "Daphne",
+    "lowresnx": "LowRes NX",
+    "lutro": "Lutro",
+    "lynx": "Handy",
+    "macintosh": "Mini vMac",
+    "mastersystem": "Genesis Plus GX",
+    "media": "FFmpeg",
+    "megaduck": "SameDuck",
+    "msx": "blueMSX",
+    "n64": "Mupen64Plus-Next",
+    "nds": "melonDS",
+    "neogeo": "Geolith",
+    "neogeocd": "NeoCD",
+    "nes": "Nestopia",
+    "ngp": "Beetle NeoGeo Pocket",
+    "ngpc": "Beetle NeoGeo Pocket",
+    "oberon": "Oberon",
+    "odyssey2": "O2EM",
+    "onscripter": "ONScripter",
+    "outrun": "Cannonball",
+    "p2000": "M2000",
+    "pal": "SDLPAL",
+    "palm": "Mu",
+    "pc": "PCem",
+    "pc88": "QUASI88",
+    "pc98": "NP2kai",
+    "pcengine": "Beetle PCE",
+    "pcenginecd": "Beetle PCE",
+    "pcfx": "Beetle PC-FX",
+    "pet": "VICE xpet",
+    "pico8": "FAKE-08",
+    "plus4": "VICE xplus4",
+    "pokemini": "PokeMini",
+    "ps2": "PCSX2",
+    "psp": "PPSSPP",
+    "psx": "DuckStation",
+    "puzzlescript": "PuzzleScript",
+    "quake": "TyrQuake",
+    "quake2": "vitaquake2",
+    "quake3": "vitaquake3",
+    "riscv": "RVVM",
+    "rpgmaker": "EasyRPG",
+    "saturn": "Beetle Saturn",
+    "scummvm": "ScummVM",
+    "scv": "EmuSCV",
+    "sega32x": "PicoDrive",
+    "segacd": "Genesis Plus GX",
+    "sg1000": "gearsystem",
+    "snes": "Snes9x",
+    "startrek": "vitavoyager",
+    "supergrafx": "Beetle SuperGrafx",
+    "supervision": "Potator",
+    "tamagotchi": "TamaLIBretro",
+    "tests": "Example",
+    "thomson": "Theodore",
+    "tic80": "TIC-80",
+    "tombraider": "OpenLara",
+    "tools": "moonlight",
+    "tyrian": "OpenTyrian",
+    "uw8": "MicroW8",
+    "uxn": "Uxn",
+    "uzebox": "Uzem",
+    "vectrex": "vecx",
+    "vic20": "VICE xvic",
+    "vircon32": "Vircon32",
+    "virtualboy": "Beetle VB",
+    "vmu": "VEMULATOR",
+    "wasm4": "WASM-4",
+    "wii": "Dolphin",
+    "wolf3d": "ECWolf",
+    "wonderswan": "Beetle WonderSwan",
+    "wonderswancolor": "Beetle WonderSwan",
+    "x1": "X Millennium",
+    "x68000": "PX68k",
+    "xbox": "DirectXbox",
+    "xrick": "XRick",
+    "zmachine": "mojozork",
+    "zx81": "EightyOne",
+    "zxspectrum": "Fuse"
+  }
+},
+
