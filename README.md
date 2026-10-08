@@ -63,6 +63,8 @@ go build -o ./bin/cartridge main.go
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
 - [Log](https://github.com/charmbracelet/log) — Pretty logs
 - [Go Osc52](github.com/aymanbagabas/go-osc52/v2) — Copy text to clipboard
+- [Cobra](https://github.com/spf13/cobra) — CLI commands and flags
+- [Fang](https://github.com/charmbracelet/fang) — Pretty help, errors and version
 
 ---
 
