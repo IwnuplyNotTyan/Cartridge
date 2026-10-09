@@ -26,19 +26,64 @@ const (
 	EnvPatched = "CARTRIDGE_PATCHED_DIR"
 	EnvSaves   = "CARTRIDGE_SAVES_DIR"
 	EnvCheats  = "CARTRIDGE_CHEATS_DIR"
+	// Steam integration overrides.
+	EnvSteamAutoAdd  = "CARTRIDGE_STEAM_AUTO_ADD"
+	EnvSteamPrefix   = "CARTRIDGE_STEAM_PREFIX"
+	EnvSteamTemplate = "CARTRIDGE_STEAM_TEMPLATE"
+	EnvSteamExe      = "CARTRIDGE_STEAM_EXE"
 )
+
+// SteamConfig controls the Steam non-Steam shortcuts integration.
+//
+// Tags (Steam categories) are built per game from Prefix + CategoryTemplate:
+// by default every game gets ["Cartridge - GBA"], i.e. one category per
+// console. The shared "all games" root tag is opt-in via AllGames.
+// Template placeholders: {prefix} {console} {console_id} {short} {title}
+// {name} ({name} is the per-console custom name from Categories, else the
+// console short tag).
+type SteamConfig struct {
+	AutoAdd          bool              `json:"auto_add,omitempty"`
+	Prefix           string            `json:"prefix,omitempty"`
+	AllGames         bool              `json:"all_games,omitempty"`
+	CategoryTemplate string            `json:"category_template,omitempty"`
+	Categories       map[string]string `json:"categories,omitempty"`
+	Exe              string            `json:"exe,omitempty"`
+	Users            []string          `json:"users,omitempty"`
+}
+
+// DefaultSteamConfig returns the out-of-the-box Steam settings.
+func DefaultSteamConfig() SteamConfig {
+	return SteamConfig{
+		AutoAdd:          false,
+		Prefix:           "Cartridge",
+		AllGames:         false,
+		CategoryTemplate: "{prefix} - {name}",
+	}
+}
+
+// EffectivePrefix returns the configured prefix (may be empty = disabled).
+func (s SteamConfig) EffectivePrefix() string { return s.Prefix }
+
+// EffectiveTemplate returns the category template or the default.
+func (s SteamConfig) EffectiveTemplate() string {
+	if strings.TrimSpace(s.CategoryTemplate) == "" {
+		return "{prefix} - {name}"
+	}
+	return s.CategoryTemplate
+}
 
 // File is the on-disk JSON config (~/.config/cartridge/config.json).
 type File struct {
-	RomDir    string `json:"rom_dir"`
-	Library   string `json:"library"`
-	Lang      string `json:"lang"`
-	Recipes   string `json:"recipes"`
-	Patches   string `json:"patches,omitempty"`
-	ModsDir   string `json:"mods_dir,omitempty"`
-	Patched   string `json:"patched_dir,omitempty"`
-	SavesDir  string `json:"saves_dir,omitempty"`
-	CheatsDir string `json:"cheats_dir,omitempty"`
+	RomDir    string       `json:"rom_dir"`
+	Library   string       `json:"library"`
+	Lang      string       `json:"lang"`
+	Recipes   string       `json:"recipes"`
+	Patches   string       `json:"patches,omitempty"`
+	ModsDir   string       `json:"mods_dir,omitempty"`
+	Patched   string       `json:"patched_dir,omitempty"`
+	SavesDir  string       `json:"saves_dir,omitempty"`
+	CheatsDir string       `json:"cheats_dir,omitempty"`
+	Steam     *SteamConfig `json:"steam,omitempty"`
 }
 
 // Config is the fully resolved runtime configuration.
@@ -52,6 +97,7 @@ type Config struct {
 	Patched    string
 	SavesDir   string
 	CheatsDir  string
+	Steam      SteamConfig
 	ConfigFile string // file actually read ("" when none)
 }
 
@@ -182,6 +228,33 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		lang = i18n.Detect()
 	}
 
+	steam := DefaultSteamConfig()
+	if f.Steam != nil {
+		steam = *f.Steam
+		// Empty template in an explicit section means "use default".
+		if strings.TrimSpace(steam.CategoryTemplate) == "" {
+			steam.CategoryTemplate = DefaultSteamConfig().CategoryTemplate
+		}
+		// NOTE: empty Prefix in an explicit section stays empty (= no root tag).
+		// Absent section (f.Steam == nil) keeps the default prefix above.
+	}
+	// Env overrides file for Steam.
+	if v := strings.TrimSpace(os.Getenv(EnvSteamAutoAdd)); v != "" {
+		steam.AutoAdd = parseBoolEnv(v, steam.AutoAdd)
+	}
+	if v, present := os.LookupEnv(EnvSteamPrefix); present {
+		steam.Prefix = strings.TrimSpace(v)
+	}
+	if v, present := os.LookupEnv(EnvSteamTemplate); present {
+		steam.CategoryTemplate = strings.TrimSpace(v)
+		if steam.CategoryTemplate == "" {
+			steam.CategoryTemplate = DefaultSteamConfig().CategoryTemplate
+		}
+	}
+	if v, present := os.LookupEnv(EnvSteamExe); present {
+		steam.Exe = strings.TrimSpace(v)
+	}
+
 	return Config{
 		RomDir:     expandPath(firstNonEmpty(dirFlag, os.Getenv(EnvDir), f.RomDir, defaultRomDir())),
 		Library:    expandPath(firstNonEmpty(libFlag, os.Getenv(EnvLibrary), f.Library, library.DefaultPath())),
@@ -192,6 +265,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		Patched:    expandPath(firstNonEmpty(os.Getenv(EnvPatched), f.Patched, DefaultPatchedDir())),
 		SavesDir:   expandPath(firstNonEmpty(os.Getenv(EnvSaves), f.SavesDir, DefaultSavesDir())),
 		CheatsDir:  expandPath(firstNonEmpty(os.Getenv(EnvCheats), f.CheatsDir, DefaultCheatsDir())),
+		Steam:      steam,
 		ConfigFile: used,
 	}, nil
 }
@@ -240,6 +314,7 @@ func (c Config) ToFile() File {
 	if i18n.Valid(c.Lang) {
 		lang = string(c.Lang)
 	}
+	steam := c.Steam
 	return File{
 		RomDir:    c.RomDir,
 		Library:   c.Library,
@@ -250,6 +325,7 @@ func (c Config) ToFile() File {
 		Patched:   c.Patched,
 		SavesDir:  c.SavesDir,
 		CheatsDir: c.CheatsDir,
+		Steam:     &steam,
 	}
 }
 
@@ -290,4 +366,16 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// parseBoolEnv parses 1/true/yes/on (and 0/false/no/off) case-insensitively.
+func parseBoolEnv(v string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }

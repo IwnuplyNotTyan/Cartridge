@@ -20,6 +20,8 @@ func (m Model) settingsRows() int {
 	case TabRecipes:
 		// Recipe rows plus the detail rows under the selected recipe.
 		return max(len(m.baseRecipes)+len(recipeFields()), 1)
+	case TabSteam:
+		return steamRowsFor(m)
 	default:
 		return len(pathEntries())
 	}
@@ -30,7 +32,8 @@ func (m Model) settingsRows() int {
 // already produced a quit command.
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Inline editing: most keys go to the buffer.
-	// Recipes tab edits a patch field (emulator/args), Paths tab edits a path.
+	// Recipes tab edits a patch field (emulator/args), Paths tab edits a path,
+	// Steam tab edits prefix/template/exe.
 	if m.settEditing {
 		if m.settTab == TabRecipes {
 			switch msg.Type {
@@ -44,6 +47,64 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.settEditing = false
 				m.settBuf = nil
 				m.settPatchField = ""
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.settBuf) > 0 {
+					m.settBuf = m.settBuf[:len(m.settBuf)-1]
+				}
+				return m, nil
+			case tea.KeyRunes:
+				m.settBuf = append(m.settBuf, msg.Runes...)
+				return m, nil
+			case tea.KeySpace:
+				m.settBuf = append(m.settBuf, ' ')
+				return m, nil
+			default:
+				if len(msg.String()) == 1 {
+					m.settBuf = append(m.settBuf, []rune(msg.String())...)
+				}
+				return m, nil
+			}
+		}
+		if m.settTab == TabSteam {
+			switch msg.Type {
+			case tea.KeyEnter:
+				v := strings.TrimSpace(string(m.settBuf))
+				switch m.settCur {
+				case steamRowPrefix:
+					m.steam.Prefix = v
+				case steamRowTemplate:
+					if v == "" {
+						v = config.DefaultSteamConfig().CategoryTemplate
+					}
+					m.steam.CategoryTemplate = v
+				case steamRowExe:
+					m.steam.Exe = config.ExpandPath(v)
+				default:
+					if c, ok := m.steamConsoleAt(m.settCur); ok {
+						if m.steam.Categories == nil && v != "" {
+							m.steam.Categories = map[string]string{}
+						}
+						if v == "" {
+							delete(m.steam.Categories, c.ID)
+						} else {
+							m.steam.Categories[c.ID] = v
+						}
+					}
+				}
+				if err := m.persistSettings(); err != nil {
+					m.status = i18n.T("status.sett.save_fail", err)
+				} else {
+					// Naming edits re-sync at once so existing Steam
+					// shortcuts/collections pick the new names up.
+					m.syncSteamNow(false)
+				}
+				m.settEditing = false
+				m.settBuf = nil
+				return m, nil
+			case tea.KeyEsc:
+				m.settEditing = false
+				m.settBuf = nil
 				return m, nil
 			case tea.KeyBackspace:
 				if len(m.settBuf) > 0 {
@@ -141,6 +202,11 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "3":
 		m.settTab = TabPaths
+		m.settCur = 0
+		m.settField = -1
+		return m, nil
+	case "4":
+		m.settTab = TabSteam
 		m.settCur = 0
 		m.settField = -1
 		return m, nil
@@ -274,6 +340,39 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.reloadRecipes()
 			return m, nil
 		}
+	case TabSteam:
+		if key.Matches(msg, k.Select) {
+			switch m.settCur {
+			case steamRowAuto:
+				m.toggleSteamAutoAdd()
+			case steamRowAll:
+				m.toggleSteamAllGames()
+			case steamRowPrefix, steamRowTemplate, steamRowExe:
+				m.settEditing = true
+				m.settBuf = []rune(m.steamFieldValue(m.settCur))
+			default:
+				if m.steamSyncRow(m.settCur) {
+					m.syncSteamNow(false)
+				} else if _, ok := m.steamConsoleAt(m.settCur); ok {
+					m.settEditing = true
+					m.settBuf = []rune(m.steamFieldValue(m.settCur))
+				}
+			}
+			return m, nil
+		}
+		// Space also toggles for discoverability.
+		if msg.String() == " " && (m.settCur == steamRowAuto || m.settCur == steamRowAll) {
+			if m.settCur == steamRowAuto {
+				m.toggleSteamAutoAdd()
+			} else {
+				m.toggleSteamAllGames()
+			}
+			return m, nil
+		}
+		if key.Matches(msg, k.Rescan) {
+			m.syncSteamNow(false)
+			return m, nil
+		}
 	}
 	// Global rescan from any settings tab.
 	if key.Matches(msg, k.Rescan) {
@@ -315,6 +414,8 @@ func (m Model) renderSettingsLines(w int) []string {
 		lines = append(lines, m.renderLangTab(w)...)
 	case TabRecipes:
 		lines = append(lines, m.renderRecipesTab(w)...)
+	case TabSteam:
+		lines = append(lines, m.renderSteamTab(w)...)
 	default:
 		lines = append(lines, m.renderPathsTab(w)...)
 	}

@@ -18,6 +18,7 @@ import (
 	"cartridge/internal/overrides"
 	"cartridge/internal/playtime"
 	"cartridge/internal/rom"
+	"cartridge/internal/steam"
 	"cartridge/internal/ui"
 )
 
@@ -180,6 +181,7 @@ func loadApp(cmd *cobra.Command) (*app, error) {
 
 // refreshLibrary loads the stored library, scans the ROM dir (reusing the
 // stored rows as hash cache), merges and saves. Scan warnings go to stderr.
+// When Steam auto-add is on, new games are synced to shortcuts.vdf.
 func refreshLibrary(cfg config.Config) ([]rom.Game, error) {
 	stored, err := library.Load(cfg.Library)
 	if err != nil {
@@ -192,6 +194,11 @@ func refreshLibrary(cfg config.Config) ([]rom.Game, error) {
 	games = library.Merge(stored, games)
 	if err := library.Save(cfg.Library, games); err != nil {
 		return nil, fmt.Errorf("save library: %w", err)
+	}
+	if cfg.Steam.AutoAdd {
+		if err := steam.MaybeAutoAdd(cfg, games); err != nil {
+			fmt.Fprintf(os.Stderr, "cartridge: steam auto-add: %v\n", err)
+		}
 	}
 	return games, nil
 }
@@ -241,6 +248,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		ui.WithPaths(a.cfg.ConfigFile, a.cfg.Recipes, a.cfg.Patches, a.cfg.ModsDir, a.cfg.SavesDir, a.cfg.CheatsDir),
 		ui.WithPatchedDir(a.cfg.Patched),
 		ui.WithLangRaw(a.rawLang),
+		ui.WithSteam(a.cfg.Steam),
 		ui.WithPlaytime(a.play),
 		ui.WithOverrides(a.over),
 		ui.WithFavorites(a.fav))

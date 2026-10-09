@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/exp/charmtone"
 
 	"cartridge/internal/cheats"
+	"cartridge/internal/config"
 	"cartridge/internal/emulate"
 	"cartridge/internal/favorites"
 	"cartridge/internal/i18n"
@@ -109,6 +110,7 @@ type Model struct {
 	savesDir    string
 	cheatsDir   string
 	langRaw     string
+	steam       config.SteamConfig
 
 	baseRecipes []emulate.Recipe
 	patches     []emulate.RecipePatch
@@ -176,6 +178,11 @@ func WithLangRaw(raw string) Option {
 	return func(m *Model) { m.langRaw = raw }
 }
 
+// WithSteam sets the Steam integration settings (auto-add, categories).
+func WithSteam(s config.SteamConfig) Option {
+	return func(m *Model) { m.steam = s }
+}
+
 // New builds the model from an initial scan.
 func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 	m := Model{
@@ -203,6 +210,11 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 	}
 	if m.langRaw == "" {
 		m.langRaw = "auto"
+	}
+	if m.steam.CategoryTemplate == "" && m.steam.Prefix == "" && !m.steam.AutoAdd && len(m.steam.Users) == 0 && m.steam.Exe == "" {
+		m.steam = config.DefaultSteamConfig()
+	} else if m.steam.CategoryTemplate == "" {
+		m.steam.CategoryTemplate = config.DefaultSteamConfig().CategoryTemplate
 	}
 	m.setGames(games)
 	return m

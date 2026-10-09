@@ -27,6 +27,7 @@ type keyMap struct {
 	Deploy   key.Binding
 	Search   key.Binding
 	Favorite key.Binding
+	Steam    key.Binding
 	Alt      key.Binding
 	Help     key.Binding
 	Quit     key.Binding
@@ -49,6 +50,7 @@ func newKeyMap() keyMap {
 		Copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", i18n.T("key.copy"))),
 		Deploy:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", i18n.T("key.deploy"))),
 		Favorite: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", i18n.T("key.favorite"))),
+		Steam:    key.NewBinding(key.WithKeys("S"), key.WithHelp("S", i18n.T("key.steam"))),
 		Alt:      key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", i18n.T("key.alt"))),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", i18n.T("key.help"))),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", i18n.T("key.quit"))),
@@ -71,7 +73,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Top, k.Bottom},
 		{k.Prev, k.Next, k.Select, k.Launch},
 		{k.PageUp, k.PageDown, k.Rescan, k.Launch},
-		{k.Copy, k.Deploy, k.Search, k.Favorite, k.Alt, k.Help, k.Quit},
+		{k.Copy, k.Deploy, k.Search, k.Favorite, k.Steam, k.Alt, k.Help, k.Quit},
 	}
 }
 

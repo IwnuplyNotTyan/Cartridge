@@ -9,6 +9,7 @@ import (
 
 	"cartridge/internal/i18n"
 	"cartridge/internal/rom"
+	"cartridge/internal/steam"
 )
 
 // Update: bubbletea messages, search and launch.
@@ -34,6 +35,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
 		} else {
 			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
+		}
+		// Steam auto-add on TUI rescan (same rule as CLI startup).
+		if m.steam.AutoAdd && len(msg.games) > 0 && len(steam.DiscoverTargets(m.steam.Users)) > 0 {
+			base := m.status
+			m.syncSteamNow(false)
+			// Keep both facts visible: rescan count + steam result.
+			if m.status != "" {
+				m.status = base + " • " + m.status
+			}
 		}
 		m.sizeMeta()
 		m.refreshMeta()
@@ -163,6 +173,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.launchSelected()
 	case key.Matches(msg, k.Favorite):
 		m.toggleFavorite()
+		return m, nil
+	case key.Matches(msg, k.Steam):
+		m.addCurrentToSteam()
 		return m, nil
 	case key.Matches(msg, k.Search):
 		// Prefill with the committed filter so it can be refined.

@@ -44,6 +44,13 @@ func newConfigCmd() *cobra.Command {
 				cprintf(cmd, "  %s\n", kv("patched", c.Patched))
 				cprintf(cmd, "  %s\n", kv("saves", c.SavesDir))
 				cprintf(cmd, "  %s\n", kv("cheats", c.CheatsDir))
+				cprintf(cmd, "  %s\n", kv("steam auto-add", onOff(c.Steam.AutoAdd)))
+				cprintf(cmd, "  %s\n", kv("steam prefix", q(c.Steam.EffectivePrefix())))
+				cprintf(cmd, "  %s\n", kv("steam all-games", onOff(c.Steam.AllGames)))
+				cprintf(cmd, "  %s\n", kv("steam template", c.Steam.EffectiveTemplate()))
+				if n := len(c.Steam.Categories); n > 0 {
+					cprintf(cmd, "  %s\n", kv("steam custom names", fmt.Sprintf("%d", n)))
+				}
 				if c.ConfigFile != "" {
 					cprintf(cmd, "  %s\n", kv("file", c.ConfigFile))
 				} else {
