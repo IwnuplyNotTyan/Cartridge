@@ -237,8 +237,8 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 
 func (m *Model) setGames(games []rom.Game) {
 	// Drop stale rows that are not valid games (mod files, archive junk
-	// from older scans lingering in the library): a rescan cleans the
-	// view at once, without waiting for the next restart save.
+	// from older scans lingering in the library): a rescan cleans both
+	// the view and the saved library at once.
 	filtered := make([]rom.Game, 0, len(games))
 	for _, g := range games {
 		if rom.ValidGame(g) {
@@ -248,11 +248,11 @@ func (m *Model) setGames(games []rom.Game) {
 	m.games = filtered
 	counts := map[string]int{}
 	names := map[string]string{}
-	for _, g := range games {
+	for _, g := range filtered {
 		counts[g.ConsoleID]++
 		names[g.ConsoleID] = g.ConsoleName
 	}
-	m.rows = []ConsoleRow{{ID: "all", Name: i18n.T("row.all"), Count: len(games)}}
+	m.rows = []ConsoleRow{{ID: "all", Name: i18n.T("row.all"), Count: len(filtered)}}
 	for _, c := range rom.Consoles {
 		if n, ok := counts[c.ID]; ok {
 			m.rows = append(m.rows, ConsoleRow{ID: c.ID, Name: c.Name, Short: c.Short, Count: n})

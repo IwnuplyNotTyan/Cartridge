@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"cartridge/internal/i18n"
+	"cartridge/internal/library"
 	"cartridge/internal/rom"
 	"cartridge/internal/steam"
 )
@@ -28,16 +29,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case rescanMsg:
+		// Explicit rescan (r) is authoritative: the shelf reflects
+		// exactly what is on disk, so entries for deleted ROMs are
+		// pruned here (unlike the conservative startup merge, which
+		// keeps them). The result is persisted, so the shelf and
+		// library.json never diverge until the next restart.
+		// Guard: a failed scan (errors plus an empty result while we
+		// had games, e.g. an unmounted drive) keeps the stored
+		// collection instead of wiping the library.
+		if len(msg.games) == 0 && len(m.games) > 0 && len(msg.errs) > 0 {
+			m.status = i18n.T("status.rescan_err",
+				0, pluralWord(0, "word.rom"),
+				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
+			return m, nil
+		}
 		m.setGames(msg.games)
+		if m.libPath != "" {
+			if err := library.Save(m.libPath, m.games); err != nil {
+				m.status = i18n.T("status.save_fail", err)
+				m.sizeMeta()
+				m.refreshMeta()
+				return m, nil
+			}
+		}
 		if len(msg.errs) > 0 {
 			m.status = i18n.T("status.rescan_err",
-				len(msg.games), pluralWord(len(msg.games), "word.rom"),
+				len(m.games), pluralWord(len(m.games), "word.rom"),
 				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
 		} else {
-			m.status = i18n.T("status.rescan", len(msg.games), pluralWord(len(msg.games), "word.rom"))
+			m.status = i18n.T("status.rescan", len(m.games), pluralWord(len(m.games), "word.rom"))
 		}
 		// Steam auto-add on TUI rescan (same rule as CLI startup).
-		if m.steam.AutoAdd && len(msg.games) > 0 && len(steam.DiscoverTargets(m.steam.Users)) > 0 {
+		if m.steam.AutoAdd && len(m.games) > 0 && len(steam.DiscoverTargets(m.steam.Users)) > 0 {
 			base := m.status
 			m.syncSteamNow(false)
 			// Keep both facts visible: rescan count + steam result.
