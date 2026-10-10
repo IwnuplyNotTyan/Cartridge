@@ -48,6 +48,7 @@ Steam must be restarted (or fully closed while syncing) to pick up changes.`,
 		newSteamResetCmd(),
 		newSteamCategoriesCmd(),
 		newSteamAutoAddCmd(),
+		newSteamIconsCmd(),
 	)
 	return cmd
 }
@@ -332,6 +333,9 @@ func newSteamAddAllCmd() *cobra.Command {
 			for _, r := range results {
 				cprintf(cmd, "  %s user %s: +%d kept %d pruned %d total %d, %s\n     %s\n",
 					ok(""), r.UserID, r.Added, r.Kept, r.Removed, r.Total, collSummary(r), dimStyle.Render(r.Path))
+				if r.IconsApplied > 0 || r.GridWithArt > 0 || r.HeroWithArt > 0 {
+					cprintf(cmd, "     %s\n", dimStyle.Render(fmt.Sprintf("icons: %d applied, %d grid new / %d with art; heroes: %d new / %d with art", r.IconsApplied, r.GridDeployed, r.GridWithArt, r.HeroDeployed, r.HeroWithArt)))
+				}
 			}
 			warnSteamRunning(cmd)
 			cprintf(cmd, "  %s\n", dimStyle.Render("restart Steam to see the new shortcuts"))

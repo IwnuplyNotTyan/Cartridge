@@ -19,10 +19,11 @@ const (
 	TabRecipes
 	TabPaths
 	TabSteam
+	TabIcons
 )
 
-// NumSettingsTabs is the tab count (Language | Recipes | Paths | Steam).
-const NumSettingsTabs = 4
+// NumSettingsTabs is the tab count (Language | Recipes | Paths | Steam | Icons).
+const NumSettingsTabs = 5
 
 // pathEntry binds a label key to a getter/setter over the model.
 type pathEntry struct {
@@ -53,6 +54,8 @@ func tabTitle(t SettingsTab) string {
 		return i18n.T("sett.tab.recipes")
 	case TabSteam:
 		return i18n.T("sett.tab.steam")
+	case TabIcons:
+		return i18n.T("sett.tab.icons")
 	default:
 		return i18n.T("sett.tab.paths")
 	}

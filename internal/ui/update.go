@@ -49,8 +49,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshMeta()
 		return m, nil
 
-	case launchDoneMsg:
-		if msg.err != nil {
+	case launchDoneMsg:		if msg.err != nil {
 			m.status = i18n.T("status.launch_fail", msg.err)
 		} else {
 			if m.play != nil {
@@ -64,6 +63,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
 		}
 		m.refreshMeta()
+		return m, nil
+
+	case iconsProgMsg:
+		m.iconsDone = msg.done
+		m.iconsTotal = msg.total
+		m.status = i18n.T("status.icons.fetching", msg.done, msg.total)
+		if m.iconsCh != nil {
+			return m, waitIconsProgress(m.iconsCh)
+		}
+		return m, nil
+
+	case iconsDoneMsg:
+		m.iconsActive = false
+		m.iconsCh = nil
+		m.iconsOk = msg.fetched
+		m.iconsFail = msg.failed
+		m.refreshIconsStat()
+		if msg.errMsg != "" {
+			m.status = i18n.T("status.steam.fail", msg.errMsg)
+			return m, nil
+		}
+		m.status = i18n.T("status.icons.synced",
+			msg.fetched, msg.heroFetched, msg.failed, msg.applied, msg.heroes, msg.profiles)
+		if msg.runningNote {
+			m.status += " • " + i18n.T("status.steam.running")
+		}
 		return m, nil
 
 	case tea.KeyMsg:

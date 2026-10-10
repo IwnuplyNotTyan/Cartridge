@@ -114,6 +114,21 @@ type Model struct {
 
 	baseRecipes []emulate.Recipe
 	patches     []emulate.RecipePatch
+
+	// Icons tab state: async bulk-fetch progress plus cached cache stats
+	// (refreshed on entering the tab and after actions, never per render).
+	iconsCh        chan iconsProgMsg
+	iconsActive    bool
+	iconsTotal     int
+	iconsDone      int
+	iconsOk        int
+	iconsFail      int
+	iconsFiles     int
+	iconsBytes     int64
+	iconsMiss      int
+	iconsCached    int
+	iconsHeroes    int
+	iconsStatFresh bool
 }
 
 // launchDoneMsg reports an emulator run back to the model.

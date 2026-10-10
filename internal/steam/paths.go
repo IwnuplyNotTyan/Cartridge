@@ -71,9 +71,19 @@ func DiscoverTargets(cfgUsers []string) []UserTarget {
 				continue
 			}
 			p := filepath.Join(ud, id, "config", "shortcuts.vdf")
-			if seen[p] {
+			// Distinct roots often symlink to one Steam install
+			// (~/.steam/steam, ~/.steam/root, ...): compare the
+			// resolved path so each userdata file syncs once.
+			key := p
+			if rp, err := filepath.EvalSymlinks(p); err == nil {
+				key = rp
+			} else if rd, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+				key = filepath.Join(rd, "shortcuts.vdf")
+			}
+			if seen[key] {
 				continue
 			}
+			seen[key] = true
 			seen[p] = true
 			out = append(out, UserTarget{UserID: id, Path: p, Root: root})
 		}

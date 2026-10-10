@@ -41,7 +41,7 @@ func BuildShortcut(g rom.Game, cfg config.SteamConfig, exe, startDir string) Sho
 		AppName:            name,
 		Exe:                exe,
 		StartDir:           startDir,
-		Icon:               "",
+		Icon:               CachedIconPath(cfg, g.ID),
 		ShortcutPath:       "",
 		LaunchOptions:      LaunchOptionsFor(g),
 		IsHidden:           false,
@@ -64,6 +64,13 @@ type SyncResult struct {
 	CollChanged int
 	CollTotal   int
 	CollSkipped bool // no cloudstorage (legacy client)
+	// Icons attached from the local cache (no network in this path).
+	IconsApplied int
+	GridDeployed int
+	GridWithArt  int
+	// Wide heroes attached from the local cache.
+	HeroDeployed int
+	HeroWithArt  int
 }
 
 // targetAppIDs splits this target's shortcuts into current (launching our
@@ -158,6 +165,18 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 		}
 	}
 	assigned := map[uint32]bool{}
+	// launchIdx fast-paths Upsert's first match rule (launch options):
+	// steady-state syncs replace in place at O(1) instead of scanning the
+	// whole list per game. Misses fall back to full Upsert (new games),
+	// then the index learns the result. Semantics equal Upsert exactly.
+	launchIdx := make(map[string]int, len(list))
+	for i, e := range list {
+		if lo := strings.TrimSpace(e.LaunchOptions); lo != "" {
+			if _, ok := launchIdx[lo]; !ok {
+				launchIdx[lo] = i
+			}
+		}
+	}
 	added := 0
 	for _, g := range games {
 		s := BuildShortcut(g, cfg, exe, startDir)
@@ -166,10 +185,24 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 			s.AppID++
 		}
 		assigned[s.AppID] = true
-		if !beforeByLaunch[strings.TrimSpace(s.LaunchOptions)] {
+		lo := strings.TrimSpace(s.LaunchOptions)
+		if !beforeByLaunch[lo] {
 			added++
 		}
+		if i, ok := launchIdx[lo]; ok && lo != "" {
+			if s.LastPlayTime == 0 {
+				s.LastPlayTime = list[i].LastPlayTime
+			}
+			list[i] = s
+			continue
+		}
 		list = Upsert(list, s)
+		for j, e := range list {
+			if strings.TrimSpace(e.LaunchOptions) == lo {
+				launchIdx[lo] = j
+				break
+			}
+		}
 	}
 	byLaunch := map[string]bool{}
 	for _, g := range games {
@@ -199,8 +232,21 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 		res.Removed = removed
 	}
 	res.Total = len(list)
+	// Cached icons are local stats only (no network): fill Icon paths,
+	// then mirror art into the grid folder Steam actually renders.
+	res.IconsApplied = ApplyCachedIcons(list, games, cfg)
 	if err := SaveFile(path, list); err != nil {
 		return res, fmt.Errorf("save %s: %w", path, err)
+	}
+	deployed, withArt, heroDeployed, heroWithArt := DeployGridArt(filepath.Dir(path), list, games, cfg)
+	res.GridDeployed, res.GridWithArt = deployed, withArt
+	res.HeroDeployed, res.HeroWithArt = heroDeployed, heroWithArt
+	if prune {
+		keep := map[uint32]bool{}
+		for _, e := range list {
+			keep[e.AppID] = true
+		}
+		PruneGridArt(filepath.Dir(path), keep)
 	}
 	// Collections live next to shortcuts.vdf; sync them in the same pass
 	// so Steam groups games per console without manual work.
@@ -394,6 +440,11 @@ func ResetAll(cfg config.SteamConfig, exe string) ([]SyncResult, error) {
 				return out, err
 			}
 			r.CollChanged, r.CollSkipped = coll.Changed, coll.Skipped
+			keep := map[uint32]bool{}
+			for _, e := range kept {
+				keep[e.AppID] = true
+			}
+			PruneGridArt(filepath.Dir(t.Path), keep)
 		}
 		out = append(out, r)
 	}
@@ -454,6 +505,11 @@ func RemoveGames(games []rom.Game, cfg config.SteamConfig, exe string) ([]SyncRe
 				return out, err
 			}
 			r.CollChanged, r.CollSkipped = coll.Changed, coll.Skipped
+			keep := map[uint32]bool{}
+			for _, e := range kept {
+				keep[e.AppID] = true
+			}
+			PruneGridArt(filepath.Dir(t.Path), keep)
 		}
 		out = append(out, r)
 	}

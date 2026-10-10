@@ -31,6 +31,9 @@ const (
 	EnvSteamPrefix   = "CARTRIDGE_STEAM_PREFIX"
 	EnvSteamTemplate = "CARTRIDGE_STEAM_TEMPLATE"
 	EnvSteamExe      = "CARTRIDGE_STEAM_EXE"
+	EnvSteamGridKey  = "CARTRIDGE_STEAMGRIDDB_KEY"
+	EnvIconsProvider = "CARTRIDGE_ICONS_PROVIDER"
+	EnvIconsDir      = "CARTRIDGE_ICONS_DIR"
 )
 
 // SteamConfig controls the Steam non-Steam shortcuts integration.
@@ -49,6 +52,38 @@ type SteamConfig struct {
 	Categories       map[string]string `json:"categories,omitempty"`
 	Exe              string            `json:"exe,omitempty"`
 	Users            []string          `json:"users,omitempty"`
+	// Icons controls cached artwork attached to shortcuts (on by default;
+	// local lookup only — no network during normal syncs):
+	// IconsProvider is auto | libretro | steamgriddb | off
+	// (auto = free Libretro CDN first, SteamGridDB fills gaps when a
+	// key is set; off disables Icon + grid entirely);
+	// IconsDir overrides the XDG cache location;
+	// SteamGridDBKey is the optional premium art API key.
+	IconsProvider  string `json:"icons_provider,omitempty"`
+	IconsDir       string `json:"icons_dir,omitempty"`
+	SteamGridDBKey string `json:"steamgriddb_key,omitempty"`
+}
+
+// IconsEnabledOrDefault reports whether icon lookup applies.
+// Zero value (field absent) means enabled — lookups are cheap local
+// stats, the network fetch only runs on explicit `steam icons sync`.
+func (s SteamConfig) IconsOn() bool {
+	if s.IconsProvider == "off" {
+		return false
+	}
+	return true
+}
+
+// EffectiveIconsProvider normalizes the provider name (default auto).
+func (s SteamConfig) EffectiveIconsProvider() string {
+	switch s.IconsProvider {
+	case "libretro", "steamgriddb", "off":
+		return s.IconsProvider
+	case "auto", "":
+		return "auto"
+	default:
+		return "auto"
+	}
 }
 
 // DefaultSteamConfig returns the out-of-the-box Steam settings.
@@ -58,6 +93,7 @@ func DefaultSteamConfig() SteamConfig {
 		Prefix:           "Cartridge",
 		AllGames:         false,
 		CategoryTemplate: "{prefix} - {name}",
+		IconsProvider:    "auto",
 	}
 }
 
@@ -253,6 +289,17 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 	}
 	if v, present := os.LookupEnv(EnvSteamExe); present {
 		steam.Exe = strings.TrimSpace(v)
+	}
+	if v, present := os.LookupEnv(EnvSteamGridKey); present {
+		steam.SteamGridDBKey = strings.TrimSpace(v)
+	}
+	if v, present := os.LookupEnv(EnvIconsProvider); present {
+		if p := strings.ToLower(strings.TrimSpace(v)); p != "" {
+			steam.IconsProvider = p
+		}
+	}
+	if v, present := os.LookupEnv(EnvIconsDir); present {
+		steam.IconsDir = strings.TrimSpace(v)
 	}
 
 	return Config{

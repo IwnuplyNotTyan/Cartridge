@@ -22,6 +22,8 @@ func (m Model) settingsRows() int {
 		return max(len(m.baseRecipes)+len(recipeFields()), 1)
 	case TabSteam:
 		return steamRowsFor(m)
+	case TabIcons:
+		return iconsRowsFor()
 	default:
 		return len(pathEntries())
 	}
@@ -99,6 +101,35 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					// shortcuts/collections pick the new names up.
 					m.syncSteamNow(false)
 				}
+				m.settEditing = false
+				m.settBuf = nil
+				return m, nil
+			case tea.KeyEsc:
+				m.settEditing = false
+				m.settBuf = nil
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.settBuf) > 0 {
+					m.settBuf = m.settBuf[:len(m.settBuf)-1]
+				}
+				return m, nil
+			case tea.KeyRunes:
+				m.settBuf = append(m.settBuf, msg.Runes...)
+				return m, nil
+			case tea.KeySpace:
+				m.settBuf = append(m.settBuf, ' ')
+				return m, nil
+			default:
+				if len(msg.String()) == 1 {
+					m.settBuf = append(m.settBuf, []rune(msg.String())...)
+				}
+				return m, nil
+			}
+		}
+		if m.settTab == TabIcons {
+			switch msg.Type {
+			case tea.KeyEnter:
+				m.saveIconsEdit(strings.TrimSpace(string(m.settBuf)))
 				m.settEditing = false
 				m.settBuf = nil
 				return m, nil
@@ -210,12 +241,21 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settCur = 0
 		m.settField = -1
 		return m, nil
+	case "5":
+		m.settTab = TabIcons
+		m.settCur = 0
+		m.settField = -1
+		m.refreshIconsStat()
+		return m, nil
 	}
 	// Tab switches tabs (like "example | example | etc" navigation).
 	if key.Matches(msg, k.Next) || msg.String() == "right" || msg.String() == "l" {
 		m.settTab = (m.settTab + 1) % NumSettingsTabs
 		m.settCur = 0
 		m.settField = -1
+		if m.settTab == TabIcons {
+			m.refreshIconsStat()
+		}
 		return m, nil
 	}
 	if key.Matches(msg, k.Prev) || msg.String() == "left" || msg.String() == "h" {
@@ -230,6 +270,9 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settTab = (m.settTab + NumSettingsTabs - 1) % NumSettingsTabs
 		m.settCur = 0
 		m.settField = -1
+		if m.settTab == TabIcons {
+			m.refreshIconsStat()
+		}
 		return m, nil
 	}
 	// Recipes tab: ↑↓ walk recipe rows only; the detail rows under the
@@ -373,6 +416,29 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncSteamNow(false)
 			return m, nil
 		}
+	case TabIcons:
+		if key.Matches(msg, k.Select) {
+			switch m.settCur {
+			case iconsRowProvider:
+				m.cycleIconsProvider()
+			case iconsRowKey, iconsRowDir:
+				m.settEditing = true
+				m.settBuf = []rune(m.iconsFieldValue(m.settCur))
+			case iconsRowSync:
+				return m, m.startIconsSync()
+			case iconsRowPrune:
+				m.pruneIconsCache()
+			}
+			return m, nil
+		}
+		// Space also cycles for discoverability.
+		if msg.String() == " " && m.settCur == iconsRowProvider {
+			m.cycleIconsProvider()
+			return m, nil
+		}
+		if key.Matches(msg, k.Rescan) {
+			return m, m.startIconsSync()
+		}
 	}
 	// Global rescan from any settings tab.
 	if key.Matches(msg, k.Rescan) {
@@ -416,6 +482,8 @@ func (m Model) renderSettingsLines(w int) []string {
 		lines = append(lines, m.renderRecipesTab(w)...)
 	case TabSteam:
 		lines = append(lines, m.renderSteamTab(w)...)
+	case TabIcons:
+		lines = append(lines, m.renderIconsTab(w)...)
 	default:
 		lines = append(lines, m.renderPathsTab(w)...)
 	}
