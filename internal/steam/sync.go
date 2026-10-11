@@ -71,6 +71,9 @@ type SyncResult struct {
 	// Wide heroes attached from the local cache.
 	HeroDeployed int
 	HeroWithArt  int
+	// Logo overlays attached from the local cache.
+	LogoDeployed int
+	LogoWithArt  int
 }
 
 // targetAppIDs splits this target's shortcuts into current (launching our
@@ -238,9 +241,10 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 	if err := SaveFile(path, list); err != nil {
 		return res, fmt.Errorf("save %s: %w", path, err)
 	}
-	deployed, withArt, heroDeployed, heroWithArt := DeployGridArt(filepath.Dir(path), list, games, cfg)
+	deployed, withArt, heroDeployed, heroWithArt, logoDeployed, logoWithArt := DeployGridArt(filepath.Dir(path), list, games, cfg)
 	res.GridDeployed, res.GridWithArt = deployed, withArt
 	res.HeroDeployed, res.HeroWithArt = heroDeployed, heroWithArt
+	res.LogoDeployed, res.LogoWithArt = logoDeployed, logoWithArt
 	if prune {
 		keep := map[uint32]bool{}
 		for _, e := range list {

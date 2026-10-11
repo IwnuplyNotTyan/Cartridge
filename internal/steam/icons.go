@@ -76,6 +76,18 @@ func CachedHeroPath(cfg config.SteamConfig, gameID string) string {
 	return ""
 }
 
+// CachedLogoPath returns the cached logo overlay for a game id, or "".
+func CachedLogoPath(cfg config.SteamConfig, gameID string) string {
+	if !iconsEnabled(cfg) || strings.TrimSpace(gameID) == "" {
+		return ""
+	}
+	c := sharedIconsCache(IconsDir(cfg))
+	if p, ok := c.HitLogo(gameID); ok {
+		return p
+	}
+	return ""
+}
+
 // ApplyCachedIcons fills Shortcut.Icon from the local cache.
 // Keeps a pre-existing Icon when it still points at a real file (e.g. a
 // hand-picked image), so re-syncs never wipe manual art. Returns hits.
@@ -126,15 +138,22 @@ func GridHeroName(appID uint32) string {
 	return strconv.FormatUint(uint64(appID), 10) + "_hero.png"
 }
 
-// DeployGridArt copies cached icons and heroes into <cfgDir>/grid for every
-// shortcut that has local art. Steady state is stats only: a destination
-// that exists with the same size and a newer mtime is trusted without
-// reading either file, so 10k-game syncs never re-read gigabytes of art.
-// Fresh deploys are hardlinks (no data blocks), with a copy fallback.
-// Returns deployed (copied now) and total-with-art, icons and heroes split.
-func DeployGridArt(cfgDir string, list []Shortcut, games []rom.Game, cfg config.SteamConfig) (deployed, withArt, heroDeployed, heroWithArt int) {
+// GridLogoName returns the grid-folder logo overlay Steam renders on top
+// of the hero on the game's library page.
+func GridLogoName(appID uint32) string {
+	return strconv.FormatUint(uint64(appID), 10) + "_logo.png"
+}
+
+// DeployGridArt copies cached icons, heroes and logos into <cfgDir>/grid
+// for every shortcut that has local art. Steady state is stats only: a
+// destination that exists with the same size and a newer mtime is trusted
+// without reading either file, so 10k-game syncs never re-read gigabytes
+// of art. Fresh deploys are hardlinks (no data blocks), with a copy
+// fallback. Returns deployed (copied now) and total-with-art, icons,
+// heroes and logos split.
+func DeployGridArt(cfgDir string, list []Shortcut, games []rom.Game, cfg config.SteamConfig) (deployed, withArt, heroDeployed, heroWithArt, logoDeployed, logoWithArt int) {
 	if !iconsEnabled(cfg) {
-		return 0, 0, 0, 0
+		return 0, 0, 0, 0, 0, 0
 	}
 	grid := filepath.Join(cfgDir, "grid")
 	// deploy links src into every dst name that isn't already our link.
@@ -201,14 +220,19 @@ func DeployGridArt(cfgDir string, list []Shortcut, games []rom.Game, cfg config.
 		}
 		deployed += deploy(GridFileNames(s.AppID), src, st)
 	}
-	// Heroes live in the cache, not in shortcuts.vdf: match shortcuts back
-	// to games via launch options, then to the cached hero file.
+	// Heroes and logos live in the cache, not in shortcuts.vdf: match
+	// shortcuts back to games via launch options, then to cached files.
 	heroByLaunch := map[string]string{}
+	logoByLaunch := map[string]string{}
 	if len(games) > 0 {
 		c := sharedIconsCache(IconsDir(cfg))
 		for _, g := range games {
+			lo := strings.TrimSpace(LaunchOptionsFor(g))
 			if p, ok := c.HitHero(g.ID); ok {
-				heroByLaunch[strings.TrimSpace(LaunchOptionsFor(g))] = p
+				heroByLaunch[lo] = p
+			}
+			if p, ok := c.HitLogo(g.ID); ok {
+				logoByLaunch[lo] = p
 			}
 		}
 	}
@@ -230,7 +254,25 @@ func DeployGridArt(cfgDir string, list []Shortcut, games []rom.Game, cfg config.
 		}
 		heroDeployed += deploy([]string{GridHeroName(s.AppID)}, hero, st)
 	}
-	return deployed, withArt, heroDeployed, heroWithArt
+	for _, s := range list {
+		logo, ok := logoByLaunch[strings.TrimSpace(s.LaunchOptions)]
+		if !ok || logo == "" {
+			continue
+		}
+		st, err := os.Stat(logo)
+		if err != nil || st.IsDir() || st.Size() == 0 {
+			continue
+		}
+		logoWithArt++
+		if !gridOK {
+			if !mkGrid() {
+				continue
+			}
+			gridOK = true
+		}
+		logoDeployed += deploy([]string{GridLogoName(s.AppID)}, logo, st)
+	}
+	return deployed, withArt, heroDeployed, heroWithArt, logoDeployed, logoWithArt
 }
 
 // sameBytes reports whether dst already holds data (size + content).
@@ -309,8 +351,8 @@ func gameStem(g rom.Game) string {
 
 // PruneGridArt removes grid files for appids no longer present.
 // keep lists live shortcut ids; returns removed file count.
-// Hero files ("<id>_hero.png") belong to their base id; anything else
-// non-numeric (real Steam game art) is treated as foreign and kept.
+// Hero ("<id>_hero.png") and logo ("<id>_logo.png") files belong to their
+// base id; anything else non-numeric (real Steam game art) is foreign.
 func PruneGridArt(cfgDir string, keep map[uint32]bool) int {
 	grid := filepath.Join(cfgDir, "grid")
 	entries, err := os.ReadDir(grid)
@@ -332,11 +374,13 @@ func PruneGridArt(cfgDir string, keep map[uint32]bool) int {
 			continue
 		}
 		base := strings.TrimSuffix(name, filepath.Ext(name))
-		// Strip our suffixes for the id lookup: portrait "p" capsules
-		// and "_hero" backdrops both belong to their base appid.
+		// Strip our suffixes for the id lookup: portrait "p" capsules,
+		// "_hero" backdrops and "_logo" overlays all belong to base appid.
 		candidates := []string{base}
 		if strings.HasSuffix(base, "_hero") {
 			candidates = append(candidates, strings.TrimSuffix(base, "_hero"))
+		} else if strings.HasSuffix(base, "_logo") {
+			candidates = append(candidates, strings.TrimSuffix(base, "_logo"))
 		} else if strings.HasSuffix(base, "p") && len(base) > 1 {
 			candidates = append(candidates, strings.TrimSuffix(base, "p"))
 		}

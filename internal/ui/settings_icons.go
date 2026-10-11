@@ -82,7 +82,7 @@ func (m *Model) cycleIconsProvider() {
 func (m *Model) refreshIconsStat() {
 	cache := steam.IconsCache(m.steam)
 	st := cache.Stat()
-	cached, heroes := 0, 0
+	cached, heroes, logos := 0, 0, 0
 	for _, g := range m.games {
 		if _, ok := cache.Hit(g.ID); ok {
 			cached++
@@ -90,12 +90,16 @@ func (m *Model) refreshIconsStat() {
 		if _, ok := cache.HitHero(g.ID); ok {
 			heroes++
 		}
+		if _, ok := cache.HitLogo(g.ID); ok {
+			logos++
+		}
 	}
 	m.iconsFiles = st.Files
 	m.iconsBytes = st.Bytes
 	m.iconsMiss = st.Failed
 	m.iconsCached = cached
 	m.iconsHeroes = heroes
+	m.iconsLogos = logos
 	m.iconsStatFresh = true
 }
 
@@ -124,9 +128,11 @@ type iconsProgMsg struct {
 type iconsDoneMsg struct {
 	fetched, skipped, failed int
 	heroFetched, heroFailed   int
+	logoFetched, logoFailed   int
 	bytes                    int64
 	applied, gridNew, art    int
 	heroes                   int
+	logos                    int
 	profiles                 int
 	errMsg                   string
 	runningNote              bool
@@ -190,6 +196,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 		done := iconsDoneMsg{
 			fetched: res.Fetched, skipped: res.Skipped, failed: res.Failed,
 			heroFetched: res.HeroFetched, heroFailed: res.HeroFailed,
+			logoFetched: res.LogoFetched, logoFailed: res.LogoFailed,
 			bytes: res.Bytes,
 		}
 		exe := strings.TrimSpace(st.Exe)
@@ -207,6 +214,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 			done.gridNew += r.GridDeployed
 			done.art = r.GridWithArt
 			done.heroes += r.HeroWithArt
+			done.logos += r.LogoWithArt
 		}
 		done.runningNote = steam.SteamRunning()
 		return done
@@ -225,7 +233,7 @@ func (m Model) renderIconsTab(w int) []string {
 	if !m.iconsStatFresh {
 		lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.icons.stats_hint"), w), w)))
 	} else {
-		stats := i18n.T("sett.icons.cached", m.iconsFiles, float64(m.iconsBytes)/(1<<20), m.iconsCached, m.iconsHeroes, len(m.games))
+		stats := i18n.T("sett.icons.cached", m.iconsFiles, float64(m.iconsBytes)/(1<<20), m.iconsCached, m.iconsHeroes, m.iconsLogos, len(m.games))
 		lines = append(lines, infoStyle.Render(fit(truncate(stats, w), w)))
 		if m.iconsMiss > 0 {
 			lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.icons.missing", m.iconsMiss), w), w)))

@@ -128,6 +128,7 @@ type Model struct {
 	iconsMiss      int
 	iconsCached    int
 	iconsHeroes    int
+	iconsLogos     int
 	iconsStatFresh bool
 }
 
