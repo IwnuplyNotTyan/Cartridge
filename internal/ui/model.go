@@ -67,9 +67,12 @@ type Model struct {
 	modCheck  map[string]mods.Check
 	modStat   modCacheStat
 	modsOpen  bool
-	keys      keyMap
-	help      help.Model
-	showHelp  bool
+	// artOpen expands the cached artwork section (icon/hero/logo rows,
+	// enter opens the file with the desktop default app).
+	artOpen  bool
+	keys     keyMap
+	help     help.Model
+	showHelp bool
 
 	width  int
 	height int

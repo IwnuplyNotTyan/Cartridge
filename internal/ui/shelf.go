@@ -293,6 +293,7 @@ func (m *Model) selectGame(i int) {
 	m.metaCur = 0
 	m.cheatsOpen = false
 	m.modsOpen = false
+	m.artOpen = false
 	m.refreshMeta()
 }
 

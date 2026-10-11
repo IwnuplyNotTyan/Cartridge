@@ -89,7 +89,9 @@ type ConsoleRow struct {
 // kind is "recipe"/"core" on switchable rows, "cheats" on the summary row,
 // "cheat" on one expanded cheat (cheat = its index), "mods" on the mods
 // summary row, "mod" on one expanded mod file (enter plays it via a
-// hard-patched instance, d toggles the softpatch copy), "sep" on separators.
+// hard-patched instance, d toggles the softpatch copy), "arts" on the
+// artwork summary row, "art" on one expanded cached file (enter opens
+// it with the desktop default app), "sep" on separators.
 type metaRow struct {
 	kind  string
 	label string

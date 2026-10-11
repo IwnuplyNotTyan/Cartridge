@@ -187,6 +187,12 @@ func (m Model) metaCopy() (tea.Model, tea.Cmd) {
 func (m *Model) metaSelect() (tea.Model, tea.Cmd) {
 	if m.metaCur >= 0 && m.metaCur < len(m.metaRows) {
 		switch m.metaRows[m.metaCur].kind {
+		case "arts":
+			m.artOpen = !m.artOpen
+			m.refreshMeta()
+			return *m, nil
+		case "art":
+			return m.openArtSelected()
 		case "mod":
 			return m.launchModSelected()
 		case "mods":
@@ -449,6 +455,7 @@ func (m Model) buildMetaRows() []metaRow {
 	if g.Inner != "" {
 		rows = append(rows, kv(i18n.T("meta.inner"), g.Inner))
 	}
+	rows = append(rows, m.artRows(*g, vw)...)
 	rows = append(rows, metaRow{sep: true})
 	if r := m.gameRecipe(*g); r != nil {
 		alts := emulate.MatchAll(m.recipes, *g)

@@ -114,6 +114,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case artOpenedMsg:
+		if msg.err != nil {
+			m.status = i18n.T("status.art.fail", msg.err)
+		} else {
+			m.status = i18n.T("status.art.opened", msg.label)
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	}
@@ -270,10 +278,11 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "esc":
-		// An expanded cheat/mod list collapses first, like settings details.
-		if m.cheatsOpen || m.modsOpen {
+		// An expanded cheat/mod/art list collapses first, like settings details.
+		if m.cheatsOpen || m.modsOpen || m.artOpen {
 			m.cheatsOpen = false
 			m.modsOpen = false
+			m.artOpen = false
 			m.refreshMeta()
 			return m, nil
 		}
