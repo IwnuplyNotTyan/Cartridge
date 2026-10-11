@@ -349,8 +349,9 @@ func TestLaunchRecordsPlaytime(t *testing.T) {
 	if !ok || st.Sessions != 1 || st.TotalSeconds != 90 {
 		t.Fatalf("playtime = %+v ok=%v", st, ok)
 	}
+	// The log screen stays up (game title, exit line, played status).
 	view := m.View()
-	for _, want := range []string{"test-nes", "played", "1 min 30 s"} {
+	for _, want := range []string{"Battletoads", "exited after 1 min 30 s", "played 1 min 30 s"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q\n%s", want, view)
 		}

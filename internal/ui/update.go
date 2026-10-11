@@ -2,7 +2,6 @@ package ui
 
 import (
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -72,7 +71,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshMeta()
 		return m, nil
 
-	case launchDoneMsg:		if msg.err != nil {
+	case launchDoneMsg:
+		if msg.err != nil {
 			m.status = i18n.T("status.launch_fail", msg.err)
 		} else {
 			if m.play != nil {
@@ -85,7 +85,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
 		}
+		// A background run finished: mark it, seal the log tail with
+		// an exit line, stop the line waiter. Playtime above is kept.
+		if m.run != nil && msg.gameID == m.run.gameID {
+			m.run.done = true
+			m.runCh = nil
+			m.run.lines = append(m.run.lines, i18n.T("run.exitline", i18n.Duration(msg.dur)))
+			if len(m.run.lines) > maxRunLines {
+				m.run.lines = m.run.lines[len(m.run.lines)-maxRunLines:]
+			}
+			if m.followRun {
+				m.runScroll = m.runMaxScroll()
+			}
+		}
 		m.refreshMeta()
+		return m, nil
+
+	case runLogMsg:
+		m.appendRunLine(msg.line)
+		if m.runCh != nil {
+			return m, waitRunLog(m.runCh)
+		}
 		return m, nil
 
 	case iconsProgMsg:
@@ -128,8 +148,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// launchSelected starts the emulator for the selected game via its recipe.
-// The TUI is suspended while the emulator runs; the session is timed.
+// launchSelected starts the emulator for the selected game in the
+// background: the TUI stays up on the log screen instead of handing
+// the whole terminal over. Playtime is recorded when it exits.
 func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 	g := m.selected()
 	if g == nil {
@@ -146,11 +167,7 @@ func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 		m.status = i18n.T("status.launch_fail", err)
 		return m, nil
 	}
-	m.status = i18n.T("status.launching", game.Title)
-	start := time.Now()
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return launchDoneMsg{gameID: game.ID, dur: time.Since(start), err: err}
-	})
+	return m.startRun(game, cmd)
 }
 
 // activeQuery returns the visible games filter: the live draft while
@@ -219,6 +236,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, k.Quit):
+		m.killRun() // no orphan emulator keeps running after quit
 		return m, tea.Quit
 	case key.Matches(msg, k.Help):
 		m.showHelp = !m.showHelp
@@ -240,6 +258,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sizeMeta()
 		m.refilter()
 		return m, nil
+	}
+	if m.runView {
+		return m.updateRunView(msg)
 	}
 	if m.showHelp && msg.String() == "esc" {
 		m.showHelp = false

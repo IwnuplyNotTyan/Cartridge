@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
@@ -261,13 +260,14 @@ func (m Model) launchModSelected() (tea.Model, tea.Cmd) {
 		m.status = i18n.T("status.launch_fail", err)
 		return m, nil
 	}
-	m.status = i18n.T("status.mod.launching", game.Title, filepath.Base(src))
-	m.modKey = "" // a fresh instance changes the [built] marks
-	m.refreshMeta()
-	start := time.Now()
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return launchDoneMsg{gameID: game.ID, dur: time.Since(start), err: err}
-	})
+	res, runCmd := m.startRun(game, cmd)
+	if mm, ok := res.(Model); ok && mm.run != nil && mm.run.gameID == game.ID && !mm.run.done {
+		mm.status = i18n.T("status.mod.launching", game.Title, filepath.Base(src))
+		mm.modKey = "" // a fresh instance changes the [built] marks
+		mm.refreshMeta()
+		return mm, runCmd
+	}
+	return res, runCmd
 }
 
 // toggleSoftpatch places the cursor mod file beside the ROM under the

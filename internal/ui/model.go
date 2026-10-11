@@ -69,10 +69,17 @@ type Model struct {
 	modsOpen  bool
 	// artOpen expands the cached artwork section (icon/hero/logo rows,
 	// enter opens the file with the desktop default app).
-	artOpen  bool
-	keys     keyMap
-	help     help.Model
-	showHelp bool
+	artOpen bool
+	// Background run state: the emulator keeps going while the TUI
+	// stays up; runView shows its log screen, runCh streams lines.
+	run       *gameRun
+	runCh     chan string
+	runView   bool
+	runScroll int
+	followRun bool
+	keys      keyMap
+	help      help.Model
+	showHelp  bool
 
 	width  int
 	height int

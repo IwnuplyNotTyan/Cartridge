@@ -131,7 +131,10 @@ func (m Model) View() string {
 	var body string
 	cw, gw, mw := m.layout()
 	sep := sepStyle.Render(strings.TrimSuffix(strings.Repeat("│\n", m.bodyH()), "\n"))
-	if m.onSettingsRow() {
+	if m.runView {
+		// The log screen replaces the columns while a game runs.
+		body = m.renderRun()
+	} else if m.onSettingsRow() {
 		sw := gw + mw
 		if gw > 0 && mw > 0 {
 			sw++ // absorb one divider: the panel spans both panes
