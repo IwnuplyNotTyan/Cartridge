@@ -1,6 +1,7 @@
 package steam
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,6 +153,108 @@ func TestSyncDeploysHero(t *testing.T) {
 	}
 	if res2.IconsApplied != 1 || res2.HeroWithArt != 1 {
 		t.Fatalf("resync must keep art counts: %+v", res2)
+	}
+}
+
+func TestSyncDeploysWideCapsule(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	ud := filepath.Join(home, ".local", "share", "Steam", "userdata", "9", "config")
+	if err := os.MkdirAll(ud, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	iconsDir := t.TempDir()
+	cfg := config.DefaultSteamConfig()
+	cfg.IconsDir = iconsDir
+	games := []rom.Game{
+		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+	}
+	// Distinct contents so slots are distinguishable.
+	icon := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x11}, 600)...)
+	wide := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x22}, 600)...)
+	if err := os.MkdirAll(filepath.Join(iconsDir, "ga", "me"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(iconsDir, "ga", "me", "gameid0001.png"), icon, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(iconsDir, "ga", "me", "gameid0001_wide.png"), wide, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := SyncFile(filepath.Join(ud, "shortcuts.vdf"), games, cfg, "/usr/bin/cartridge", "/usr/bin", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.WideWithArt != 1 || res.WideDeployed != 1 {
+		t.Fatalf("wide = %+v", res)
+	}
+	list, err := LoadFile(filepath.Join(ud, "shortcuts.vdf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("shortcuts = %d", len(list))
+	}
+	// Wide slot holds the landscape capsule, portrait slot the icon.
+	if got, err := os.ReadFile(filepath.Join(ud, "grid", GridWideName(list[0].AppID))); err != nil || !bytes.Equal(got, wide) {
+		t.Fatalf("wide grid must hold the wide capsule: err=%v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(ud, "grid", GridPortraitName(list[0].AppID))); err != nil || !bytes.Equal(got, icon) {
+		t.Fatalf("portrait grid must hold the icon: err=%v", err)
+	}
+	// Steady state: re-sync copies nothing.
+	res2, err := SyncFile(filepath.Join(ud, "shortcuts.vdf"), games, cfg, "/usr/bin/cartridge", "/usr/bin", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.WideDeployed != 0 || res2.GridDeployed != 0 {
+		t.Fatalf("resync must copy nothing: %+v", res2)
+	}
+	if res2.WideWithArt != 1 {
+		t.Fatalf("resync must keep wide counts: %+v", res2)
+	}
+}
+
+func TestSyncWideFallsBackToIcon(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	ud := filepath.Join(home, ".local", "share", "Steam", "userdata", "9", "config")
+	if err := os.MkdirAll(ud, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	iconsDir := t.TempDir()
+	cfg := config.DefaultSteamConfig()
+	cfg.IconsDir = iconsDir
+	games := []rom.Game{
+		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+	}
+	// Icon only, no wide capsule cached.
+	writePNG(t, filepath.Join(iconsDir, "ga", "me", "gameid0001.png"))
+	res, err := SyncFile(filepath.Join(ud, "shortcuts.vdf"), games, cfg, "/usr/bin/cartridge", "/usr/bin", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.WideWithArt != 1 {
+		t.Fatalf("icon must back the wide slot: %+v", res)
+	}
+	list, err := LoadFile(filepath.Join(ud, "shortcuts.vdf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon, err := os.ReadFile(filepath.Join(ud, "grid", GridPortraitName(list[0].AppID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide, err := os.ReadFile(filepath.Join(ud, "grid", GridWideName(list[0].AppID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(icon, wide) {
+		t.Fatalf("without a cached wide the icon must fill both slots")
 	}
 }
 

@@ -38,8 +38,9 @@ type gridArtResp struct {
 }
 
 // fetchViaGridDB searches the game then downloads the best image:
-// portrait capsules for icons, /heroes/ for backdrops, /logos/ for logo
-// overlays. Returns bytes written and true on success.
+// /grids/ capsules for icons (portrait-first) and wides (landscape-only),
+// /heroes/ for backdrops, /logos/ for logo overlays. Returns bytes
+// written and true on success.
 func (c *Cache) fetchViaGridDB(ctx context.Context, g Game, kind ArtKind) (int64, bool) {
 	key := strings.TrimSpace(c.GridDBKey)
 	if key == "" {
@@ -147,7 +148,8 @@ func gridArtURL(base, endpoint string, gameID int, query string) string {
 }
 
 // gridBestArt picks one static image per flavor: /grids/ capsules for
-// icons, /heroes/ backdrops for heroes, /logos/ overlays for logos.
+// icons (portrait-first) and wides (landscape-only), /heroes/ backdrops
+// for heroes, /logos/ overlays for logos.
 // (The old code asked /grids/ with hero dimensions, which matches nothing
 // — heroes never came from SteamGridDB. Each flavor has its own endpoint.)
 func (c *Cache) gridBestArt(ctx context.Context, client *http.Client, key string, gameID int, kind ArtKind) (string, bool) {
@@ -159,7 +161,11 @@ func (c *Cache) gridBestArt(ctx context.Context, client *http.Client, key string
 func (c *Cache) gridBestArtFrom(ctx context.Context, client *http.Client, key, base string, gameID int, kind ArtKind) (string, bool) {
 	endpoint := "grids"
 	query := "dimensions=600x900,460x215,920x430&types=static&limit=1"
-	if kind == ArtHero {
+	if kind == ArtWide {
+		// Landscape only: the wide grid slot is 920x430 (460x215 also
+		// valid), a 600x900 portrait here would render cropped.
+		query = "dimensions=920x430,460x215&types=static&limit=1"
+	} else if kind == ArtHero {
 		endpoint = "heroes"
 		// Only these three are valid hero dimensions per the API
 		// (1920x620, 3840x1240, 1600x650): any other value 400s the

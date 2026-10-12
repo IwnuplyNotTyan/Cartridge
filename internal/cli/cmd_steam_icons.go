@@ -68,10 +68,13 @@ func newSteamIconsStatusCmd() *cobra.Command {
 			}
 			cache := steam.IconsCache(a.cfg.Steam)
 			st := cache.Stat()
-			withArt, withHeroes, withLogos := 0, 0, 0
+			withArt, withWides, withHeroes, withLogos := 0, 0, 0, 0
 			for _, g := range a.games {
 				if _, ok := cache.Hit(g.ID); ok {
 					withArt++
+				}
+				if _, ok := cache.HitWide(g.ID); ok {
+					withWides++
 				}
 				if _, ok := cache.HitHero(g.ID); ok {
 					withHeroes++
@@ -86,14 +89,17 @@ func newSteamIconsStatusCmd() *cobra.Command {
 					"provider":      a.cfg.Steam.EffectiveIconsProvider(),
 					"dir":           st.Dir,
 					"files":         st.Files,
+					"wide_files":    st.WideFiles,
 					"hero_files":    st.HeroFiles,
 					"logo_files":    st.LogoFiles,
 					"bytes":         st.Bytes,
 					"failed":        st.Failed,
+					"wide_failed":   st.WideFailed,
 					"hero_failed":   st.HeroFailed,
 					"logo_failed":   st.LogoFailed,
 					"games":         len(a.games),
 					"games_cached":  withArt,
+					"wides_cached":  withWides,
 					"heroes_cached": withHeroes,
 					"logos_cached":  withLogos,
 					"targets":       len(targets),
@@ -104,10 +110,14 @@ func newSteamIconsStatusCmd() *cobra.Command {
 			cprintf(cmd, "  %s\n", kv("provider", a.cfg.Steam.EffectiveIconsProvider()))
 			cprintf(cmd, "  %s\n", kv("cache", fmt.Sprintf("%s (%d file(s), %.1f MiB)", st.Dir, st.Files, float64(st.Bytes)/(1<<20))))
 			cprintf(cmd, "  %s\n", kv("icons cached", fmt.Sprintf("%d / %d", withArt, len(a.games))))
+			cprintf(cmd, "  %s\n", kv("wides cached", fmt.Sprintf("%d / %d", withWides, len(a.games))))
 			cprintf(cmd, "  %s\n", kv("heroes cached", fmt.Sprintf("%d / %d", withHeroes, len(a.games))))
 			cprintf(cmd, "  %s\n", kv("logos cached", fmt.Sprintf("%d / %d", withLogos, len(a.games))))
 			if st.Failed > 0 {
 				cprintf(cmd, "  %s\n", kv("without art", fmt.Sprintf("%d (backed off 7d, retry with --refresh)", st.Failed)))
+			}
+			if st.WideFailed > 0 {
+				cprintf(cmd, "  %s\n", kv("without wides", fmt.Sprintf("%d (backed off 7d, retry with --refresh)", st.WideFailed)))
 			}
 			if st.HeroFailed > 0 {
 				cprintf(cmd, "  %s\n", kv("without heroes", fmt.Sprintf("%d (backed off 7d, retry with --refresh)", st.HeroFailed)))
@@ -187,14 +197,18 @@ func newSteamIconsSyncCmd() *cobra.Command {
 			if dryRun {
 				// Totals always scan the whole filter (cheap local stats);
 				// --limit only caps fetching, not counting.
-				missing, missingHero, missingLogo := 0, 0, 0
+				missing, missingWide, missingHero, missingLogo := 0, 0, 0, 0
 				shown := 0
 				for _, g := range games {
 					_, iconHit := cache.Hit(g.ID)
+					_, wideHit := cache.HitWide(g.ID)
 					_, heroHit := cache.HitHero(g.ID)
 					_, logoHit := cache.HitLogo(g.ID)
 					if !iconHit && !cache.FailedRecently(g.ID, icons.ArtIcon, time.Now()) {
 						missing++
+					}
+					if !wideHit && !cache.FailedRecently(g.ID, icons.ArtWide, time.Now()) {
+						missingWide++
 					}
 					if !heroHit && !cache.FailedRecently(g.ID, icons.ArtHero, time.Now()) {
 						missingHero++
@@ -202,12 +216,12 @@ func newSteamIconsSyncCmd() *cobra.Command {
 					if !logoHit && !cache.FailedRecently(g.ID, icons.ArtLogo, time.Now()) {
 						missingLogo++
 					}
-					if shown < 20 && (!iconHit || !heroHit || !logoHit) {
+					if shown < 20 && (!iconHit || !wideHit || !heroHit || !logoHit) {
 						cprintf(cmd, "  + %-5s %-40s %s\n", consoleShort(g), truncate(g.Title, 40), dimStyle.Render(g.ConsoleID))
 						shown++
 					}
 				}
-				cprintf(cmd, "  %s\n", dimStyle.Render(fmt.Sprintf("%d without icons, %d without heroes, %d without logos (showing %d)", missing, missingHero, missingLogo, shown)))
+				cprintf(cmd, "  %s\n", dimStyle.Render(fmt.Sprintf("%d without icons, %d without wides, %d without heroes, %d without logos (showing %d)", missing, missingWide, missingHero, missingLogo, shown)))
 				return nil
 			}
 			if cache.Provider == icons.ProviderOff {
@@ -231,8 +245,8 @@ func newSteamIconsSyncCmd() *cobra.Command {
 			res := cache.Sync(ctx, steam.ToIconGames(games), refresh, limit, prog.each)
 			prog.done()
 			el := time.Since(start).Round(time.Second)
-			cprintf(cmd, "  %s\n", kv("downloaded", fmt.Sprintf("%d icons + %d heroes + %d logos fetched, %d+%d+%d skipped, %d+%d+%d failed, %.1f MiB in %s",
-				res.Fetched, res.HeroFetched, res.LogoFetched, res.Skipped, res.HeroSkipped, res.LogoSkipped, res.Failed, res.HeroFailed, res.LogoFailed, float64(res.Bytes)/(1<<20), el)))
+			cprintf(cmd, "  %s\n", kv("downloaded", fmt.Sprintf("%d icons + %d wides + %d heroes + %d logos fetched, %d+%d+%d+%d skipped, %d+%d+%d+%d failed, %.1f MiB in %s",
+				res.Fetched, res.WideFetched, res.HeroFetched, res.LogoFetched, res.Skipped, res.WideSkipped, res.HeroSkipped, res.LogoSkipped, res.Failed, res.WideFailed, res.HeroFailed, res.LogoFailed, float64(res.Bytes)/(1<<20), el)))
 			// Apply: re-sync shortcuts so Icon paths + grid art land in Steam.
 			targets := steam.DiscoverTargets(a.cfg.Steam.Users)
 			if len(targets) == 0 {
@@ -245,8 +259,8 @@ func newSteamIconsSyncCmd() *cobra.Command {
 				return err
 			}
 			for _, r := range results {
-				cprintf(cmd, "  %s user %s: %d icon(s) + %d hero(es) + %d logo(s), %d+%d+%d grid file(s) new, %d+%d+%d with art\n     %s\n",
-					ok(""), r.UserID, r.IconsApplied, r.HeroWithArt, r.LogoWithArt, r.GridDeployed, r.HeroDeployed, r.LogoDeployed, r.GridWithArt, r.HeroWithArt, r.LogoWithArt, dimStyle.Render(r.Path))
+				cprintf(cmd, "  %s user %s: %d icon(s) + %d wide(s) + %d hero(es) + %d logo(s), %d+%d+%d+%d grid file(s) new, %d+%d+%d+%d with art\n     %s\n",
+					ok(""), r.UserID, r.IconsApplied, r.WideWithArt, r.HeroWithArt, r.LogoWithArt, r.GridDeployed, r.WideDeployed, r.HeroDeployed, r.LogoDeployed, r.GridWithArt, r.WideWithArt, r.HeroWithArt, r.LogoWithArt, dimStyle.Render(r.Path))
 			}
 			warnSteamRunning(cmd)
 			cprintf(cmd, "  %s\n", dimStyle.Render("restart Steam to see the new icons"))

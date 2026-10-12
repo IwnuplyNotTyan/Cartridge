@@ -60,6 +60,43 @@ func TestGridBestArtHeroEndpoint(t *testing.T) {
 	}
 }
 
+// TestGridBestArtWideEndpoint guards the wide-capsule flavor: /grids/
+// with landscape dimensions only (a 600x900 portrait in the 920x430
+// slot would render cropped).
+func TestGridBestArtWideEndpoint(t *testing.T) {
+	var gotPath, gotDims, gotTypes string
+	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(append(png1x1, make([]byte, 600)...))
+	}))
+	defer img.Close()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotDims, gotTypes = r.URL.Path, r.URL.Query().Get("dimensions"), r.URL.Query().Get("types")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":[{"url":%q}]}`, img.URL+"/wide.png")
+	}))
+	defer api.Close()
+
+	c := New(t.TempDir())
+	if _, ok := c.gridBestArtFrom(context.Background(), api.Client(), "key", api.URL, 9, ArtWide); !ok {
+		t.Fatalf("wide art must fetch")
+	}
+	if !strings.HasPrefix(gotPath, "/grids/game/9") {
+		t.Fatalf("wide must hit /grids/, got path %q dims %q", gotPath, gotDims)
+	}
+	if gotTypes != "static" {
+		t.Fatalf("wide must request static art, got types %q", gotTypes)
+	}
+	for _, d := range strings.Split(gotDims, ",") {
+		if !validGridDims[d] {
+			t.Fatalf("invalid grid dimension %q in %q", d, gotDims)
+		}
+		if d == "600x900" || d == "512x512" || d == "1024x1024" {
+			t.Fatalf("portrait/square dimension %q has no place in the wide slot: %q", d, gotDims)
+		}
+	}
+}
+
 // TestGridBestArtIconEndpoint guards the icon flavor the same way.
 func TestGridBestArtIconEndpoint(t *testing.T) {
 	var gotPath, gotDims string

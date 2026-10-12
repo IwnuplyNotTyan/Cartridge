@@ -50,19 +50,21 @@ const (
 	MaxConcurrency     = 32
 	httpTimeout        = 20 * time.Second
 	maxImageBytes      = 8 << 20 // 8 MiB: grid art never exceeds this
-	minImageBytes      = 512    // smaller payloads are error pages
+	minImageBytes      = 512     // smaller payloads are error pages
 	failCooldown       = 7 * 24 * time.Hour
 	maxRetries         = 2
 	manifestName       = "index.json"
 )
 
 // ArtKind selects which artwork flavor to fetch: portrait-ish boxart for
-// the shortcut Icon / capsule, a wide backdrop for the Steam hero, or a
-// transparent logo overlay for the Steam library page.
+// the shortcut Icon / portrait capsule, a landscape capsule for the wide
+// grid slot, a wide backdrop for the Steam hero, or a transparent logo
+// overlay for the Steam library page.
 type ArtKind string
 
 const (
 	ArtIcon ArtKind = "icon"
+	ArtWide ArtKind = "wide"
 	ArtHero ArtKind = "hero"
 	ArtLogo ArtKind = "logo"
 )
@@ -72,6 +74,9 @@ const heroSuffix = "_hero"
 
 // logoSuffix distinguishes the logo shard from the icon shard.
 const logoSuffix = "_logo"
+
+// wideSuffix distinguishes the wide-capsule shard from the icon shard.
+const wideSuffix = "_wide"
 
 // Game is the minimal per-game input providers need.
 // Stem is the ROM filename stem ("ActRaiser (USA)" from ".../ActRaiser (USA).sfc"
@@ -87,9 +92,9 @@ type Game struct {
 	Tags      []string
 }
 
-// Entry is one manifest row: icon art plus the optional wide hero and
-// logo overlay. Hero/logo fields mirror the icon ones so misses back off
-// independently.
+// Entry is one manifest row: icon art plus the optional wide capsule,
+// wide hero and logo overlay. Per-flavor fields mirror the icon ones so
+// misses back off independently.
 type Entry struct {
 	File      string `json:"file"` // path relative to cache dir
 	URL       string `json:"url,omitempty"`
@@ -98,6 +103,14 @@ type Entry struct {
 	Bytes     int64  `json:"bytes,omitempty"`
 	FailCount int    `json:"fail_count,omitempty"`
 	FailedAt  int64  `json:"failed_at,omitempty"`
+
+	WideFile      string `json:"wide_file,omitempty"`
+	WideURL       string `json:"wide_url,omitempty"`
+	WideProvider  string `json:"wide_provider,omitempty"`
+	WideFetchedAt int64  `json:"wide_fetched_at,omitempty"`
+	WideBytes     int64  `json:"wide_bytes,omitempty"`
+	WideFailCount int    `json:"wide_fail_count,omitempty"`
+	WideFailedAt  int64  `json:"wide_failed_at,omitempty"`
 
 	HeroFile      string `json:"hero_file,omitempty"`
 	HeroURL       string `json:"hero_url,omitempty"`
@@ -143,6 +156,11 @@ func ShardPathLogo(gameID string) string {
 	return shardPathFor(gameID, ArtLogo)
 }
 
+// ShardPathWide returns the cache-relative wide-capsule file for a game id.
+func ShardPathWide(gameID string) string {
+	return shardPathFor(gameID, ArtWide)
+}
+
 func shardPathFor(gameID string, kind ArtKind) string {
 	id := strings.ToLower(strings.TrimSpace(gameID))
 	if len(id) < 4 {
@@ -154,14 +172,17 @@ func shardPathFor(gameID string, kind ArtKind) string {
 		name = id + heroSuffix + ".png"
 	} else if kind == ArtLogo {
 		name = id + logoSuffix + ".png"
+	} else if kind == ArtWide {
+		name = id + wideSuffix + ".png"
 	}
 	return filepath.Join(id[:2], id[2:4], name)
 }
 
 // gameFileID derives the game id back from a cache file base name,
-// stripping the hero/logo suffixes ("<id>_hero" -> "<id>").
+// stripping the hero/logo/wide suffixes ("<id>_hero" -> "<id>").
 func gameFileID(base string) string {
 	base = strings.TrimSuffix(base, heroSuffix)
+	base = strings.TrimSuffix(base, wideSuffix)
 	return strings.TrimSuffix(base, logoSuffix)
 }
 
@@ -295,6 +316,11 @@ func (c *Cache) HitLogo(gameID string) (string, bool) {
 	return c.hitKind(gameID, ArtLogo)
 }
 
+// HitWide returns the cached wide-capsule file when it exists on disk.
+func (c *Cache) HitWide(gameID string) (string, bool) {
+	return c.hitKind(gameID, ArtWide)
+}
+
 func (c *Cache) hitKind(gameID string, kind ArtKind) (string, bool) {
 	c.load()
 	p := filepath.Join(c.Dir, shardPathFor(gameID, kind))
@@ -319,6 +345,8 @@ func (c *Cache) FailedRecently(gameID string, kind ArtKind, now time.Time) bool 
 		at, n = e.HeroFailedAt, e.HeroFailCount
 	} else if kind == ArtLogo {
 		at, n = e.LogoFailedAt, e.LogoFailCount
+	} else if kind == ArtWide {
+		at, n = e.WideFailedAt, e.WideFailCount
 	}
 	if n == 0 || at == 0 {
 		return false
@@ -333,6 +361,8 @@ type Stats struct {
 	Bytes      int64  `json:"bytes"`
 	Indexed    int    `json:"indexed"`
 	Failed     int    `json:"failed"`
+	WideFiles  int    `json:"wide_files"`
+	WideFailed int    `json:"wide_failed"`
 	HeroFiles  int    `json:"hero_files"`
 	HeroFailed int    `json:"hero_failed"`
 	LogoFiles  int    `json:"logo_files"`
@@ -348,6 +378,9 @@ func (c *Cache) Stat() Stats {
 	for _, e := range c.entries {
 		if e.FailedAt != 0 && e.Bytes == 0 {
 			st.Failed++
+		}
+		if e.WideFailedAt != 0 && e.WideBytes == 0 {
+			st.WideFailed++
 		}
 		if e.HeroFailedAt != 0 && e.HeroBytes == 0 {
 			st.HeroFailed++
@@ -372,6 +405,8 @@ func (c *Cache) Stat() Stats {
 				st.HeroFiles++
 			} else if strings.HasSuffix(barename, logoSuffix) {
 				st.LogoFiles++
+			} else if strings.HasSuffix(barename, wideSuffix) {
+				st.WideFiles++
 			}
 		}
 		return nil
@@ -480,12 +515,15 @@ func (c *Cache) removeEmptyShards() {
 	}
 }
 
-// Result counts one Sync run (icons + heroes + logos tracked separately).
+// Result counts one Sync run (icons + wides + heroes + logos tracked separately).
 type Result struct {
 	Total       int   `json:"total"`
 	Fetched     int   `json:"fetched"`
 	Skipped     int   `json:"skipped"`
 	Failed      int   `json:"failed"`
+	WideFetched int   `json:"wide_fetched"`
+	WideSkipped int   `json:"wide_skipped"`
+	WideFailed  int   `json:"wide_failed"`
 	HeroFetched int   `json:"hero_fetched"`
 	HeroSkipped int   `json:"hero_skipped"`
 	HeroFailed  int   `json:"hero_failed"`
@@ -496,9 +534,9 @@ type Result struct {
 }
 
 // Sync downloads missing art for games with a bounded worker pool.
-// All flavors (icon + wide hero + logo overlay) are fetched per game;
-// Refresh forces re-download of hits. Limit caps how many games are
-// attempted (0 = all). onEach, when non-nil, reports per-game progress
+// All flavors (icon + wide capsule + wide hero + logo overlay) are fetched
+// per game; Refresh forces re-download of hits. Limit caps how many games
+// are attempted (0 = all). onEach, when non-nil, reports per-game progress
 // (ok = any flavor hit).
 func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int, onEach func(id string, ok bool)) Result {
 	c.load()
@@ -510,31 +548,40 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 	}
 	now := time.Now()
 	type job struct {
-		g         Game
+		g        Game
 		wantIcon bool
+		wantWide bool
 		wantHero bool
 		wantLogo bool
 	}
 	jobs := make(chan job)
-	var fetched, skipped, failed, heroFetched, heroSkipped, heroFailed, logoFetched, logoSkipped, logoFailed int64
+	var fetched, skipped, failed, wideFetched, wideSkipped, wideFailed, heroFetched, heroSkipped, heroFailed, logoFetched, logoSkipped, logoFailed int64
 	var nbytes int64
 
 	// Pre-filter cheaply (disk stat only, no network) to keep the queue small.
 	queue := make([]Game, 0, len(games))
 	wantIcon := map[string]bool{}
+	wantWide := map[string]bool{}
 	wantHero := map[string]bool{}
 	wantLogo := map[string]bool{}
 	for _, g := range games {
 		if strings.TrimSpace(g.ID) == "" {
 			continue
 		}
-		wi, wh, wl := true, true, true
+		wi, ww, wh, wl := true, true, true, true
 		if p, ok := c.Hit(g.ID); ok && !refresh && p != "" {
 			atomic.AddInt64(&skipped, 1)
 			wi = false
 		} else if !refresh && c.FailedRecently(g.ID, ArtIcon, now) {
 			atomic.AddInt64(&skipped, 1)
 			wi = false
+		}
+		if p, ok := c.HitWide(g.ID); ok && !refresh && p != "" {
+			atomic.AddInt64(&wideSkipped, 1)
+			ww = false
+		} else if !refresh && c.FailedRecently(g.ID, ArtWide, now) {
+			atomic.AddInt64(&wideSkipped, 1)
+			ww = false
 		}
 		if p, ok := c.HitHero(g.ID); ok && !refresh && p != "" {
 			atomic.AddInt64(&heroSkipped, 1)
@@ -550,16 +597,16 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 			atomic.AddInt64(&logoSkipped, 1)
 			wl = false
 		}
-		if !wi && !wh && !wl {
+		if !wi && !ww && !wh && !wl {
 			continue
 		}
-		wantIcon[g.ID], wantHero[g.ID], wantLogo[g.ID] = wi, wh, wl
+		wantIcon[g.ID], wantWide[g.ID], wantHero[g.ID], wantLogo[g.ID] = wi, ww, wh, wl
 		queue = append(queue, g)
 		if limit > 0 && len(queue) >= limit {
 			break
 		}
 	}
-	res := Result{Total: len(games), Skipped: int(skipped), HeroSkipped: int(heroSkipped), LogoSkipped: int(logoSkipped)}
+	res := Result{Total: len(games), Skipped: int(skipped), WideSkipped: int(wideSkipped), HeroSkipped: int(heroSkipped), LogoSkipped: int(logoSkipped)}
 	if len(queue) == 0 {
 		return res
 	}
@@ -588,7 +635,7 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 					if !ok {
 						return
 					}
-					okIcon, okHero, okLogo := true, true, true
+					okIcon, okWide, okHero, okLogo := true, true, true, true
 					if j.wantIcon {
 						if n, ok := c.fetchOne(ctx, j.g, provider, ArtIcon); ok {
 							atomic.AddInt64(&fetched, 1)
@@ -596,6 +643,15 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 						} else {
 							atomic.AddInt64(&failed, 1)
 							okIcon = false
+						}
+					}
+					if j.wantWide {
+						if n, ok := c.fetchOne(ctx, j.g, provider, ArtWide); ok {
+							atomic.AddInt64(&wideFetched, 1)
+							atomic.AddInt64(&nbytes, n)
+						} else {
+							atomic.AddInt64(&wideFailed, 1)
+							okWide = false
 						}
 					}
 					if j.wantHero {
@@ -617,7 +673,7 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 						}
 					}
 					if onEach != nil {
-						onEach(j.g.ID, okIcon || okHero || okLogo)
+						onEach(j.g.ID, okIcon || okWide || okHero || okLogo)
 					}
 				}
 			}
@@ -629,13 +685,15 @@ func (c *Cache) Sync(ctx context.Context, games []Game, refresh bool, limit int,
 			select {
 			case <-ctx.Done():
 				return
-			case jobs <- job{g: g, wantIcon: wantIcon[g.ID], wantHero: wantHero[g.ID], wantLogo: wantLogo[g.ID]}:
+			case jobs <- job{g: g, wantIcon: wantIcon[g.ID], wantWide: wantWide[g.ID], wantHero: wantHero[g.ID], wantLogo: wantLogo[g.ID]}:
 			}
 		}
 	}()
 	wg.Wait()
 	res.Fetched = int(fetched)
 	res.Failed = int(failed)
+	res.WideFetched = int(wideFetched)
+	res.WideFailed = int(wideFailed)
 	res.HeroFetched = int(heroFetched)
 	res.HeroFailed = int(heroFailed)
 	res.LogoFetched = int(logoFetched)
@@ -734,8 +792,8 @@ func (c *Cache) download(ctx context.Context, g Game, provider, url string, kind
 }
 
 // storeResponse validates and writes one HTTP response to the shard path.
-// Only the requested flavor's fields are touched, so icon/hero/logo rows
-// coexist in one manifest entry.
+// Only the requested flavor's fields are touched, so icon/wide/hero/logo
+// rows coexist in one manifest entry.
 func (c *Cache) storeResponse(g Game, provider, url string, kind ArtKind, resp *http.Response) (int64, bool) {
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
@@ -767,6 +825,10 @@ func (c *Cache) storeResponse(g Game, provider, url string, kind ArtKind, resp *
 		e.HeroFile, e.HeroURL, e.HeroProvider = rel, url, provider
 		e.HeroFetchedAt, e.HeroBytes = now, int64(len(data))
 		e.HeroFailCount, e.HeroFailedAt = 0, 0
+	} else if kind == ArtWide {
+		e.WideFile, e.WideURL, e.WideProvider = rel, url, provider
+		e.WideFetchedAt, e.WideBytes = now, int64(len(data))
+		e.WideFailCount, e.WideFailedAt = 0, 0
 	} else if kind == ArtLogo {
 		e.LogoFile, e.LogoURL, e.LogoProvider = rel, url, provider
 		e.LogoFetchedAt, e.LogoBytes = now, int64(len(data))
@@ -792,6 +854,12 @@ func (c *Cache) markFailed(gameID string, kind ArtKind) {
 		e.HeroFailedAt = now
 		if e.HeroBytes == 0 {
 			e.HeroFile = ""
+		}
+	} else if kind == ArtWide {
+		e.WideFailCount++
+		e.WideFailedAt = now
+		if e.WideBytes == 0 {
+			e.WideFile = ""
 		}
 	} else if kind == ArtLogo {
 		e.LogoFailCount++

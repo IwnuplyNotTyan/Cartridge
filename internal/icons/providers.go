@@ -8,8 +8,9 @@ import (
 // candidatesFor returns download URLs for g under provider, best first.
 // Heroes are wide backdrops: SteamGridDB serves real 16:9 heroes, the free
 // CDN falls back to in-game snapshots (portrait boxart would look broken
-// stretched across the Steam library page). Logos only come from
-// SteamGridDB (transparent overlays the free CDN has no equivalent for).
+// stretched across the Steam library page). Wide capsules and logos only
+// come from SteamGridDB (landscape capsules and transparent overlays the
+// free CDN has no equivalent for).
 func candidatesFor(provider string, g Game, gridKey string, kind ArtKind) []string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case ProviderSteamGrid:
@@ -63,8 +64,11 @@ var libretroHeroCategories = []string{"Named_Snaps"}
 // Thumbnail repos use No-Intro filenames ("ActRaiser (USA).png"), so the
 // ROM filename stem goes first, then Title re-suffixed with Region/Tags,
 // then the bare title last. Each name is tried per category in order.
+// Wide capsules have no free-CDN equivalent (repos hold portrait boxart
+// and 4:3 snaps, both wrong for the 920x430 slot), so they resolve via
+// SteamGridDB only.
 func libretroCandidates(g Game, kind ArtKind) []string {
-	if kind == ArtLogo {
+	if kind == ArtLogo || kind == ArtWide {
 		return nil
 	}
 	repo, ok := libretroRepo[strings.ToLower(strings.TrimSpace(g.ConsoleID))]

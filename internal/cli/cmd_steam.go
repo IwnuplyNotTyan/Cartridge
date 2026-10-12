@@ -365,8 +365,8 @@ func newSteamAddAllCmd() *cobra.Command {
 			for _, r := range results {
 				cprintf(cmd, "  %s user %s: +%d kept %d pruned %d total %d, %s\n     %s\n",
 					ok(""), r.UserID, r.Added, r.Kept, r.Removed, r.Total, collSummary(r), dimStyle.Render(r.Path))
-				if r.IconsApplied > 0 || r.GridWithArt > 0 || r.HeroWithArt > 0 || r.LogoWithArt > 0 {
-					cprintf(cmd, "     %s\n", dimStyle.Render(fmt.Sprintf("icons: %d applied, %d grid new / %d with art; heroes: %d new / %d with art; logos: %d new / %d with art", r.IconsApplied, r.GridDeployed, r.GridWithArt, r.HeroDeployed, r.HeroWithArt, r.LogoDeployed, r.LogoWithArt)))
+				if r.IconsApplied > 0 || r.GridWithArt > 0 || r.WideWithArt > 0 || r.HeroWithArt > 0 || r.LogoWithArt > 0 {
+					cprintf(cmd, "     %s\n", dimStyle.Render(fmt.Sprintf("icons: %d applied, %d grid new / %d with art; wides: %d new / %d with art; heroes: %d new / %d with art; logos: %d new / %d with art", r.IconsApplied, r.GridDeployed, r.GridWithArt, r.WideDeployed, r.WideWithArt, r.HeroDeployed, r.HeroWithArt, r.LogoDeployed, r.LogoWithArt)))
 				}
 			}
 			warnSteamRunning(cmd)

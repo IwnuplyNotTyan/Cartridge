@@ -68,6 +68,9 @@ type SyncResult struct {
 	IconsApplied int
 	GridDeployed int
 	GridWithArt  int
+	// Wide capsules attached from the local cache.
+	WideDeployed int
+	WideWithArt  int
 	// Wide heroes attached from the local cache.
 	HeroDeployed int
 	HeroWithArt  int
@@ -241,8 +244,9 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 	if err := SaveFile(path, list); err != nil {
 		return res, fmt.Errorf("save %s: %w", path, err)
 	}
-	deployed, withArt, heroDeployed, heroWithArt, logoDeployed, logoWithArt := DeployGridArt(filepath.Dir(path), list, games, cfg)
+	deployed, withArt, wideDeployed, wideWithArt, heroDeployed, heroWithArt, logoDeployed, logoWithArt := DeployGridArt(filepath.Dir(path), list, games, cfg)
 	res.GridDeployed, res.GridWithArt = deployed, withArt
+	res.WideDeployed, res.WideWithArt = wideDeployed, wideWithArt
 	res.HeroDeployed, res.HeroWithArt = heroDeployed, heroWithArt
 	res.LogoDeployed, res.LogoWithArt = logoDeployed, logoWithArt
 	if prune {

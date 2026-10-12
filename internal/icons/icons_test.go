@@ -246,6 +246,59 @@ func TestHeroHitAndPrune(t *testing.T) {
 	}
 }
 
+func TestWideHitAndPrune(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir)
+	widePath := filepath.Join(dir, ShardPathWide("wide0001"))
+	if err := os.MkdirAll(filepath.Dir(widePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(widePath, append(png1x1, make([]byte, 600)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.HitWide("wide0001"); !ok {
+		t.Fatalf("wide must hit")
+	}
+	if _, ok := c.Hit("wide0001"); ok {
+		t.Fatalf("wide file must not count as icon")
+	}
+	if st := c.Stat(); st.WideFiles != 1 || st.Files != 1 {
+		t.Fatalf("stat = %+v", st)
+	}
+	// Failure backoff is per-flavor: a wide miss must not imply an icon miss.
+	if c.FailedRecently("wide0001", ArtWide, time.Now()) {
+		t.Fatalf("hit must not back off")
+	}
+	// Prune by game id keeps the wide (suffix stripped for the lookup).
+	if removed, _, err := c.Prune(map[string]bool{"wide0001": true}); err != nil || removed != 0 {
+		t.Fatalf("live wide pruned: removed=%d err=%v", removed, err)
+	}
+	if removed, _, err := c.Prune(map[string]bool{}); err != nil || removed != 1 {
+		t.Fatalf("dead wide kept: removed=%d err=%v", removed, err)
+	}
+}
+
+func TestSyncTracksWideSeparately(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir)
+	c.Concurrency = 2
+	// Unknown console: no candidates for any flavor, instant misses.
+	games := []Game{{ID: "widemiss01", Title: "Miss", ConsoleID: "no-such-console"}}
+	res := c.Sync(context.Background(), games, false, 0, nil)
+	if res.Failed != 1 || res.WideFailed != 1 || res.HeroFailed != 1 || res.LogoFailed != 1 {
+		t.Fatalf("all flavors must miss: %+v", res)
+	}
+	now := time.Now()
+	if !c.FailedRecently("widemiss01", ArtWide, now) {
+		t.Fatalf("wide backoff must be recorded")
+	}
+	// Second run: all misses are in cooldown, no more work.
+	res2 := c.Sync(context.Background(), games, false, 0, nil)
+	if res2.Fetched != 0 || res2.WideFetched != 0 || res2.Failed != 0 || res2.WideFailed != 0 {
+		t.Fatalf("cooldown must skip failures: %+v", res2)
+	}
+}
+
 func TestPruneKeepsOnlyWanted(t *testing.T) {
 	dir := t.TempDir()
 	c := New(dir)
