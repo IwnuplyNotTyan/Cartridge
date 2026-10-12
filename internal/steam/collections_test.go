@@ -378,6 +378,79 @@ func TestTrackedRenameSweepsOldCollection(t *testing.T) {
 	}
 }
 
+// A renamed category with a lost track file leaves an ours-only
+// collection whose name is no longer wanted but whose members are
+// current appids — no stale-drop can hit it. Prune must retire it,
+// while a mixed user collection keeps every member.
+func TestCollectionsPruneRetiresOrphanedOursOnly(t *testing.T) {
+	cfgDir := seedCloud(t, nil)
+	nsPath, _, _ := cloudPaths(cfgDir)
+	pairs, err := loadNamespace(nsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkExtra := map[string]json.RawMessage{
+		"conflictResolutionMethod": json.RawMessage(`"custom"`),
+		"strMethodId":              json.RawMessage(`"union-collections"`),
+	}
+	mkVal := func(id, name string, added []uint32) string {
+		return encodeCollectionValue(CollectionValue{
+			ID: id, Name: name,
+			Added: added, Removed: []uint32{},
+			Filter: json.RawMessage(emptyFilterSpec),
+		}, mkExtra)
+	}
+	addColl := func(key, id, name string, added []uint32, ver int64) {
+		pairs = append(pairs, nsPair{Key: key, Raw: encodeEntry(cloudEntry{
+			Key: key, Timestamp: 1700000003,
+			Value:   mkVal(id, name, added),
+			Version: cloudVersion{N: ver, Quoted: true},
+		}, mkExtra)})
+	}
+	addColl("user-collections.uc-phantomnes01", "uc-phantomnes01", "Cartridge - NES", []uint32{3000000001}, 103)
+	addColl("user-collections.uc-userset00001", "uc-userset00001", "Моя подборка", []uint32{999, 3000000001}, 104)
+	if err := saveNamespace(nsPath, pairs); err != nil {
+		t.Fatal(err)
+	}
+	managed := map[uint32]bool{3000000001: true}
+	current := map[uint32]bool{3000000001: true}
+	res, err := SyncCollections(cfgDir, map[string][]uint32{"Cartridge - GBA": {3000000001}}, managed, current, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed != 2 {
+		t.Fatalf("changed = %d, want 2 (phantom retired + GBA created)", res.Changed)
+	}
+	infos, err := ReadCollections(cfgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range infos {
+		if strings.EqualFold(in.Name, "Cartridge - NES") {
+			t.Fatalf("phantom collection still live: %+v", in)
+		}
+		if in.Name == "Моя подборка" && in.Members != 2 {
+			t.Fatalf("user collection touched: %+v", in)
+		}
+	}
+	cv, ok := collByName(t, cfgDir, "Cartridge - GBA")
+	if !ok || !equalU32(cv.Added, []uint32{3000000001}) {
+		t.Fatalf("want collection wrong: %+v %v", cv, ok)
+	}
+	// Second prune is a no-op.
+	snap := readNS(t, cfgDir)
+	res2, err := SyncCollections(cfgDir, map[string][]uint32{"Cartridge - GBA": {3000000001}}, managed, current, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Changed != 0 {
+		t.Fatalf("second prune changed %d", res2.Changed)
+	}
+	if readNS(t, cfgDir) != snap {
+		t.Fatalf("second prune rewrote the file")
+	}
+}
+
 func TestCollectionsDynamicGuard(t *testing.T) {
 	cfgDir := seedCloud(t, nil)
 	nsPath, _, _ := cloudPaths(cfgDir)

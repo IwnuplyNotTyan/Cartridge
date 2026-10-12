@@ -282,8 +282,17 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 	}
 	// Previously-ours collections under a different name (renamed since):
 	// clean our appids out of them, tombstoning solely-ours leftovers.
-	sweep, ours := trackedSweep(cfgDir, want, managed, current, userID, trackPath)
-	coll, err := reconcileCollections(cfgDir, want, drop, prune, sweep, ours)
+	sweep, trackedOurs := trackedSweep(cfgDir, want, managed, current, userID, trackPath)
+	// Every cartridge appid of this target: lets prune retire orphaned
+	// ours-only collections even when the track file is gone.
+	allOurs := map[uint32]bool{}
+	for a := range managed {
+		allOurs[a] = true
+	}
+	for a := range current {
+		allOurs[a] = true
+	}
+	coll, err := reconcileCollections(cfgDir, want, drop, prune, sweep, trackedOurs, allOurs)
 	if err != nil {
 		return res, err
 	}

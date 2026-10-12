@@ -196,11 +196,34 @@ func printSteamCollections(cmd *cobra.Command, a *app, targets []steam.UserTarge
 			byName[strings.ToLower(strings.TrimSpace(in.Name))] = in.Members
 		}
 		cprintf(cmd, "\n%s\n", dimStyle.Render(fmt.Sprintf("Collections in Steam (user %s):", t.UserID)))
+		wantLower := map[string]bool{}
+		for tag := range counts {
+			wantLower[strings.ToLower(tag)] = true
+		}
 		for _, tag := range orderedCategoryTags(counts, strings.TrimSpace(a.cfg.Steam.EffectivePrefix())) {
 			if n, ok := byName[strings.ToLower(tag)]; ok {
 				cprintf(cmd, "  %-28s %s\n", consoleStyle.Render(tag), formatGames(n))
 			} else {
 				cprintf(cmd, "  %-28s %s\n", consoleStyle.Render(tag), dimStyle.Render("not synced yet"))
+			}
+		}
+		// Orphaned: live in Steam but no game maps to them anymore
+		// (renamed category, stale library row, ...). `steam prune`
+		// retires ours-only ones; mixed ones need manual cleanup.
+		var orphaned []steam.CollectionInfo
+		for _, in := range infos {
+			if wantLower[strings.ToLower(strings.TrimSpace(in.Name))] {
+				continue
+			}
+			if isSteamSystemCollection(in) {
+				continue
+			}
+			orphaned = append(orphaned, in)
+		}
+		if len(orphaned) > 0 {
+			cprintf(cmd, "  %s\n", warn("orphaned (not in library config — prune retires ours-only ones):"))
+			for _, in := range orphaned {
+				cprintf(cmd, "  %-28s %s\n", consoleStyle.Render(in.Name), formatGames(in.Members))
 			}
 		}
 	}
@@ -222,6 +245,15 @@ func orderedCategoryTags(counts map[string]int, prefix string) []string {
 		}
 	}
 	return rest
+}
+
+// isSteamSystemCollection reports Steam-owned collections (Favorites,
+// Hidden, tag-derived) that are never orphaned by definition.
+func isSteamSystemCollection(in steam.CollectionInfo) bool {
+	k := strings.ToLower(strings.TrimSpace(in.Key))
+	return k == "user-collections.favorite" ||
+		k == "user-collections.hidden" ||
+		strings.HasPrefix(k, "user-collections.from-tag-")
 }
 
 // dirOfConfig returns the config dir holding shortcuts.vdf.

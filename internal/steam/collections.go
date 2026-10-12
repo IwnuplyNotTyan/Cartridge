@@ -234,15 +234,19 @@ func replacePair(pairs []nsPair, s *collSlot, key string, entry cloudEntry, extr
 // reconcileCollections is the single merge engine behind sync, prune and
 // reset. want maps category name → current appids (nil for pure
 // prune/reset passes). drop holds appids to remove from merged entries
-// (stale ours for prune, everything ours for reset). With visitAll,
-// non-want collections are swept for drop appids too. sweep lists extra
-// collection keys (previously ours, e.g. renamed) cleaned of sweepDrop
-// appids. A collection that ends up empty is tombstoned only when every
-// previous member is in the applied drop set — i.e. it existed solely
-// because of our games. Foreign members, Steam-owned entries
-// (favorite/hidden/from-tag-*) and dynamic (filtered) collections are
-// never touched.
-func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint32]bool, visitAll bool, sweep map[string]bool, sweepDrop map[uint32]bool) (CollectionResult, error) {
+// (stale ours for prune, everything ours for reset). ours holds every
+// cartridge appid of this target (managed + current) and, with visitAll,
+// retires orphaned ours-only collections whose name is no longer wanted:
+// a renamed category with a lost track file would otherwise haunt Steam
+// forever, because its members are current appids no stale-drop can hit.
+// With visitAll, non-want collections are swept for drop appids too.
+// sweep lists extra collection keys (previously ours, e.g. renamed)
+// cleaned of sweepDrop appids. A collection that ends up empty is
+// tombstoned only when every previous member is in the applied drop set —
+// i.e. it existed solely because of our games. Foreign members,
+// Steam-owned entries (favorite/hidden/from-tag-*) and dynamic (filtered)
+// collections are never touched.
+func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint32]bool, visitAll bool, sweep map[string]bool, sweepDrop map[uint32]bool, ours map[uint32]bool) (CollectionResult, error) {
 	var res CollectionResult
 	res.Keys = map[string]string{}
 	nsPath, namespacesPath, modifiedPath := cloudPaths(cfgDir)
@@ -352,11 +356,17 @@ func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint
 		pairs = replacePair(pairs, s, key, entry, extra, found)
 		if found {
 			visited[s.idx] = true
+		} else {
+			visited[len(pairs)-1] = true
 		}
 		changedKeys[key] = true
 		res.Changed++
 	}
 	if visitAll || len(sweep) > 0 {
+		wantLower := make(map[string]bool, len(want))
+		for n := range want {
+			wantLower[strings.ToLower(strings.TrimSpace(n))] = true
+		}
 		for i, p := range pairs {
 			if visited[i] || !strings.HasPrefix(p.Key, "user-collections.") || isSteamOwned(p.Key) {
 				continue
@@ -369,13 +379,33 @@ func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint
 			if err != nil || isDynamic(cv.Filter) {
 				continue
 			}
+			if wantLower[strings.ToLower(strings.TrimSpace(cv.Name))] {
+				continue // name still wanted (duplicate or dynamic-guarded): not an orphan
+			}
 			// Per-entry drop set: sweep entries (renamed ours) are
-			// cleaned of all our appids, others only of stale ones.
+			// cleaned of all our appids, others only of stale ones —
+			// except orphaned ours-only collections (every member in
+			// ours, name no longer wanted): prune retires those
+			// outright, otherwise a lost track file leaves a phantom
+			// no relink or stale-drop can ever remove. Mixed user
+			// collections (with foreign members) still lose stale
+			// appids only.
 			entryDrop := drop
 			if sweep[p.Key] {
 				entryDrop = sweepDrop
 			} else if !visitAll {
 				continue
+			} else if len(cv.Added) > 0 && len(ours) > 0 {
+				orphaned := true
+				for _, a := range cv.Added {
+					if !ours[a] {
+						orphaned = false
+						break
+					}
+				}
+				if orphaned {
+					entryDrop = ours
+				}
 			}
 			kept := make([]uint32, 0, len(cv.Added))
 			allOurs := true
@@ -436,14 +466,17 @@ func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint
 // With prune, managed appids that are no longer current are dropped.
 func SyncCollections(cfgDir string, want map[string][]uint32, managed, current map[uint32]bool, prune bool) (CollectionResult, error) {
 	drop := map[uint32]bool{}
-	if prune {
-		for a := range managed {
-			if !current[a] {
-				drop[a] = true
-			}
+	ours := map[uint32]bool{}
+	for a := range managed {
+		ours[a] = true
+		if !current[a] && prune {
+			drop[a] = true
 		}
 	}
-	return reconcileCollections(cfgDir, want, drop, prune, nil, nil)
+	for a := range current {
+		ours[a] = true
+	}
+	return reconcileCollections(cfgDir, want, drop, prune, nil, nil, ours)
 }
 
 // ResetCollections removes appids from every user collection except
@@ -456,7 +489,7 @@ func ResetCollections(cfgDir string, remove, managed map[uint32]bool) (Collectio
 	for a := range managed {
 		drop[a] = true
 	}
-	return reconcileCollections(cfgDir, nil, drop, true, nil, nil)
+	return reconcileCollections(cfgDir, nil, drop, true, nil, nil, nil)
 }
 
 // collectionKeysByName indexes live user collections (name → key),
