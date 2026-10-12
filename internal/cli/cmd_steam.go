@@ -209,7 +209,7 @@ func printSteamCollections(cmd *cobra.Command, a *app, targets []steam.UserTarge
 		}
 		// Orphaned: live in Steam but no game maps to them anymore
 		// (renamed category, stale library row, ...). `steam prune`
-		// retires ours-only ones; mixed ones need manual cleanup.
+		// retires empty and ours-only ones; mixed ones need manual cleanup.
 		var orphaned []steam.CollectionInfo
 		for _, in := range infos {
 			if wantLower[strings.ToLower(strings.TrimSpace(in.Name))] {
@@ -221,7 +221,7 @@ func printSteamCollections(cmd *cobra.Command, a *app, targets []steam.UserTarge
 			orphaned = append(orphaned, in)
 		}
 		if len(orphaned) > 0 {
-			cprintf(cmd, "  %s\n", warn("orphaned (not in library config — prune retires ours-only ones):"))
+			cprintf(cmd, "  %s\n", warn("orphaned (not in library config — prune retires empty/ours-only ones):"))
 			for _, in := range orphaned {
 				cprintf(cmd, "  %-28s %s\n", consoleStyle.Render(in.Name), formatGames(in.Members))
 			}

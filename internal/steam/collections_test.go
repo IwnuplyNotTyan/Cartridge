@@ -451,6 +451,92 @@ func TestCollectionsPruneRetiresOrphanedOursOnly(t *testing.T) {
 	}
 }
 
+// Empty live shells ("Cartridge - NES / 0 games") have no members for
+// any drop set to hit, so prune/reset must retire them outright while
+// leaving non-empty user collections alone.
+func TestCollectionsPruneRetiresEmptyShells(t *testing.T) {
+	cfgDir := seedCloud(t, nil)
+	nsPath, _, _ := cloudPaths(cfgDir)
+	pairs, err := loadNamespace(nsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkExtra := map[string]json.RawMessage{
+		"conflictResolutionMethod": json.RawMessage(`"custom"`),
+		"strMethodId":              json.RawMessage(`"union-collections"`),
+	}
+	addColl := func(key, id, name string, added []uint32, ver int64) {
+		pairs = append(pairs, nsPair{Key: key, Raw: encodeEntry(cloudEntry{
+			Key: key, Timestamp: 1700000003,
+			Value: encodeCollectionValue(CollectionValue{
+				ID: id, Name: name,
+				Added: added, Removed: []uint32{},
+				Filter: json.RawMessage(emptyFilterSpec),
+			}, mkExtra),
+			Version: cloudVersion{N: ver, Quoted: true},
+		}, mkExtra)})
+	}
+	addColl("user-collections.uc-emptyshell01", "uc-emptyshell01", "Cartridge - NES", []uint32{}, 103)
+	addColl("user-collections.uc-userset00002", "uc-userset00002", "Моя подборка", []uint32{999}, 104)
+	if err := saveNamespace(nsPath, pairs); err != nil {
+		t.Fatal(err)
+	}
+	managed := map[uint32]bool{3000000001: true}
+	current := map[uint32]bool{3000000001: true}
+	res, err := SyncCollections(cfgDir, map[string][]uint32{"Cartridge - GBA": {3000000001}}, managed, current, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed != 2 {
+		t.Fatalf("changed = %d, want 2 (empty shell retired + GBA created)", res.Changed)
+	}
+	infos, err := ReadCollections(cfgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range infos {
+		if strings.EqualFold(in.Name, "Cartridge - NES") {
+			t.Fatalf("empty shell still live: %+v", in)
+		}
+	}
+	cv, ok := collByName(t, cfgDir, "Моя подборка")
+	if !ok || !equalU32(cv.Added, []uint32{999}) {
+		t.Fatalf("user collection touched: %+v %v", cv, ok)
+	}
+	// Reset retires empty shells too.
+	addColl2 := func() {
+		p2, err := loadNamespace(nsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p2 = append(p2, nsPair{Key: "user-collections.uc-emptyreset01", Raw: encodeEntry(cloudEntry{
+			Key: "user-collections.uc-emptyreset01", Timestamp: 1700000005,
+			Value: encodeCollectionValue(CollectionValue{
+				ID: "uc-emptyreset01", Name: "Cartridge - My GBA",
+				Added: []uint32{}, Removed: []uint32{},
+				Filter: json.RawMessage(emptyFilterSpec),
+			}, mkExtra),
+			Version: cloudVersion{N: 106, Quoted: true},
+		}, mkExtra)})
+		if err := saveNamespace(nsPath, p2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addColl2()
+	if _, err := ResetCollections(cfgDir, map[uint32]bool{3000000001: true}, map[uint32]bool{3000000001: true}); err != nil {
+		t.Fatal(err)
+	}
+	infos, err = ReadCollections(cfgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range infos {
+		if strings.EqualFold(in.Name, "Cartridge - My GBA") {
+			t.Fatalf("empty shell survived reset: %+v", in)
+		}
+	}
+}
+
 func TestCollectionsDynamicGuard(t *testing.T) {
 	cfgDir := seedCloud(t, nil)
 	nsPath, _, _ := cloudPaths(cfgDir)

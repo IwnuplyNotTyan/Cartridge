@@ -243,9 +243,11 @@ func replacePair(pairs []nsPair, s *collSlot, key string, entry cloudEntry, extr
 // sweep lists extra collection keys (previously ours, e.g. renamed)
 // cleaned of sweepDrop appids. A collection that ends up empty is
 // tombstoned only when every previous member is in the applied drop set —
-// i.e. it existed solely because of our games. Foreign members,
-// Steam-owned entries (favorite/hidden/from-tag-*) and dynamic (filtered)
-// collections are never touched.
+// i.e. it existed solely because of our games. Already-empty shells (0
+// games, name not wanted) are tombstoned on sweep/prune/reset outright:
+// no drop set can hit them, so otherwise they linger forever. Foreign
+// members, Steam-owned entries (favorite/hidden/from-tag-*) and dynamic
+// (filtered) collections are never touched.
 func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint32]bool, visitAll bool, sweep map[string]bool, sweepDrop map[uint32]bool, ours map[uint32]bool) (CollectionResult, error) {
 	var res CollectionResult
 	res.Keys = map[string]string{}
@@ -381,6 +383,29 @@ func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint
 			}
 			if wantLower[strings.ToLower(strings.TrimSpace(cv.Name))] {
 				continue // name still wanted (duplicate or dynamic-guarded): not an orphan
+			}
+			if len(cv.Added) == 0 {
+				// Empty shell (0 games): no members for any drop set to
+				// hit, so without this it lingers forever — the exact
+				// "Cartridge - NES / 0 games" phantom (Steam itself
+				// drops dangling members when shortcuts vanish, keeping
+				// the empty shell). Retire it when it's tracked-ours
+				// (sweep) or when pruning/resetting (visitAll); plain
+				// syncs leave untracked empties alone. Nothing to lose:
+				// an empty collection holds no games.
+				if !sweep[p.Key] && !visitAll {
+					continue
+				}
+				maxV++
+				pairs[i].Raw = encodeEntry(cloudEntry{
+					Key:       p.Key,
+					Timestamp: nowTS(),
+					Version:   cloudVersion{N: maxV, Quoted: true},
+					Deleted:   true,
+				}, nil)
+				changedKeys[p.Key] = true
+				res.Changed++
+				continue
 			}
 			// Per-entry drop set: sweep entries (renamed ours) are
 			// cleaned of all our appids, others only of stale ones —
