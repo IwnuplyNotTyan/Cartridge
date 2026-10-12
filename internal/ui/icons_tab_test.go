@@ -49,13 +49,14 @@ func TestIconsStatsShowHeroes(t *testing.T) {
 		}
 	}
 	mk(g.ID[:2] + "/" + g.ID[2:4] + "/" + g.ID + ".png")
+	mk(g.ID[:2] + "/" + g.ID[2:4] + "/" + g.ID + "_wide.png")
 	mk(g.ID[:2] + "/" + g.ID[2:4] + "/" + g.ID + "_hero.png")
 	m.refreshIconsStat()
-	if m.iconsCached != 1 || m.iconsHeroes != 1 {
-		t.Fatalf("cached=%d heroes=%d", m.iconsCached, m.iconsHeroes)
+	if m.iconsCached != 1 || m.iconsWides != 1 || m.iconsHeroes != 1 {
+		t.Fatalf("cached=%d wides=%d heroes=%d", m.iconsCached, m.iconsWides, m.iconsHeroes)
 	}
-	if view := m.View(); !strings.Contains(view, "1 icons + 1 heroes") {
-		t.Fatalf("stats must show heroes\n%s", view)
+	if view := m.View(); !strings.Contains(view, "1 icons + 1 wides + 1 heroes") {
+		t.Fatalf("stats must show wides and heroes\n%s", view)
 	}
 }
 

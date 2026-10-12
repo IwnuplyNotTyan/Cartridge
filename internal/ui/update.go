@@ -128,7 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setStatus(i18n.T("status.steam.fail", msg.errMsg))
 		}
 		note := i18n.T("status.icons.synced",
-			msg.fetched, msg.heroFetched, msg.logoFetched, msg.failed, msg.applied, msg.heroes, msg.logos, msg.profiles)
+			msg.fetched, msg.wideFetched, msg.heroFetched, msg.logoFetched, msg.failed, msg.applied, msg.wides, msg.heroes, msg.logos, msg.profiles)
 		if msg.runningNote {
 			note += " • " + i18n.T("status.steam.running")
 		}

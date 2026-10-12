@@ -15,9 +15,9 @@ import (
 	"cartridge/internal/steam"
 )
 
-// Artwork preview: a collapsible cached icon/hero/logo section in the
-// metadata pane (hidden by default, like cheats/mods). Enter on a file
-// row hands it to the desktop default app (xdg-open on Linux).
+// Artwork preview: a collapsible cached icon/wide/hero/logo section in
+// the metadata pane (hidden by default, like cheats/mods). Enter on a
+// file row hands it to the desktop default app (xdg-open on Linux).
 
 // artOpenedMsg reports the desktop opener back to the model.
 type artOpenedMsg struct {
@@ -70,6 +70,7 @@ func (m Model) artRows(g rom.Game, vw int) []metaRow {
 		path string
 	}{
 		{"icon", steam.CachedIconPath(m.steam, g.ID)},
+		{"wide", steam.CachedWidePath(m.steam, g.ID)},
 		{"hero", steam.CachedHeroPath(m.steam, g.ID)},
 		{"logo", steam.CachedLogoPath(m.steam, g.ID)},
 	}

@@ -31,6 +31,8 @@ func writeArtFile(t *testing.T, dir, gameID string, kind icons.ArtKind) string {
 	t.Helper()
 	var rel string
 	switch kind {
+	case icons.ArtWide:
+		rel = icons.ShardPathWide(gameID)
 	case icons.ArtHero:
 		rel = icons.ShardPathHero(gameID)
 	case icons.ArtLogo:
@@ -73,10 +75,11 @@ func TestMetaArtRowsHiddenWithoutCache(t *testing.T) {
 func TestMetaArtSummaryCollapsedByDefault(t *testing.T) {
 	dir := t.TempDir()
 	writeArtFile(t, dir, "aaa111", icons.ArtIcon)
+	writeArtFile(t, dir, "aaa111", icons.ArtWide)
 	writeArtFile(t, dir, "aaa111", icons.ArtHero)
 	writeArtFile(t, dir, "aaa111", icons.ArtLogo)
 	m := artTestModel(t, dir)
-	if got := metaRowText(t, m, "arts"); !strings.Contains(got, "(3)") {
+	if got := metaRowText(t, m, "arts"); !strings.Contains(got, "(4)") {
 		t.Fatalf("summary must show count, got %q", got)
 	}
 	for _, r := range m.metaRows {
@@ -91,7 +94,7 @@ func TestMetaArtSummaryCollapsedByDefault(t *testing.T) {
 			labels = append(labels, r.label)
 		}
 	}
-	for _, want := range []string{"icon", "hero", "logo"} {
+	for _, want := range []string{"icon", "wide", "hero", "logo"} {
 		found := false
 		for _, l := range labels {
 			if l == want {

@@ -67,7 +67,7 @@ type Model struct {
 	modCheck  map[string]mods.Check
 	modStat   modCacheStat
 	modsOpen  bool
-	// artOpen expands the cached artwork section (icon/hero/logo rows,
+	// artOpen expands the cached artwork section (icon/wide/hero/logo rows,
 	// enter opens the file with the desktop default app).
 	artOpen bool
 	// Background run state: the emulator keeps going while the TUI
@@ -140,6 +140,7 @@ type Model struct {
 	iconsBytes     int64
 	iconsMiss      int
 	iconsCached    int
+	iconsWides     int
 	iconsHeroes    int
 	iconsLogos     int
 	iconsStatFresh bool

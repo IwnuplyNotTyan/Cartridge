@@ -81,10 +81,13 @@ func (m *Model) cycleIconsProvider() tea.Cmd {
 func (m *Model) refreshIconsStat() {
 	cache := steam.IconsCache(m.steam)
 	st := cache.Stat()
-	cached, heroes, logos := 0, 0, 0
+	cached, wides, heroes, logos := 0, 0, 0, 0
 	for _, g := range m.games {
 		if _, ok := cache.Hit(g.ID); ok {
 			cached++
+		}
+		if _, ok := cache.HitWide(g.ID); ok {
+			wides++
 		}
 		if _, ok := cache.HitHero(g.ID); ok {
 			heroes++
@@ -97,6 +100,7 @@ func (m *Model) refreshIconsStat() {
 	m.iconsBytes = st.Bytes
 	m.iconsMiss = st.Failed
 	m.iconsCached = cached
+	m.iconsWides = wides
 	m.iconsHeroes = heroes
 	m.iconsLogos = logos
 	m.iconsStatFresh = true
@@ -125,10 +129,12 @@ type iconsProgMsg struct {
 // iconsDoneMsg reports the finished fetch plus the Steam apply pass.
 type iconsDoneMsg struct {
 	fetched, skipped, failed int
-	heroFetched, heroFailed   int
-	logoFetched, logoFailed   int
+	wideFetched, wideFailed  int
+	heroFetched, heroFailed  int
+	logoFetched, logoFailed  int
 	bytes                    int64
 	applied, gridNew, art    int
+	wides                    int
 	heroes                   int
 	logos                    int
 	profiles                 int
@@ -189,6 +195,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 		// Local stats/copies only, no network — safe inside the worker.
 		done := iconsDoneMsg{
 			fetched: res.Fetched, skipped: res.Skipped, failed: res.Failed,
+			wideFetched: res.WideFetched, wideFailed: res.WideFailed,
 			heroFetched: res.HeroFetched, heroFailed: res.HeroFailed,
 			logoFetched: res.LogoFetched, logoFailed: res.LogoFailed,
 			bytes: res.Bytes,
@@ -207,6 +214,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 			done.applied += r.IconsApplied
 			done.gridNew += r.GridDeployed
 			done.art = r.GridWithArt
+			done.wides += r.WideWithArt
 			done.heroes += r.HeroWithArt
 			done.logos += r.LogoWithArt
 		}
@@ -227,7 +235,7 @@ func (m Model) renderIconsTab(w int) []string {
 	if !m.iconsStatFresh {
 		lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.icons.stats_hint"), w), w)))
 	} else {
-		stats := i18n.T("sett.icons.cached", m.iconsFiles, float64(m.iconsBytes)/(1<<20), m.iconsCached, m.iconsHeroes, m.iconsLogos, len(m.games))
+		stats := i18n.T("sett.icons.cached", m.iconsFiles, float64(m.iconsBytes)/(1<<20), m.iconsCached, m.iconsWides, m.iconsHeroes, m.iconsLogos, len(m.games))
 		lines = append(lines, infoStyle.Render(fit(truncate(stats, w), w)))
 		if m.iconsMiss > 0 {
 			lines = append(lines, infoStyle.Render(fit(truncate(i18n.T("sett.icons.missing", m.iconsMiss), w), w)))
