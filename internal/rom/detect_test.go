@@ -11,6 +11,26 @@ import (
 	"testing"
 )
 
+func TestPartitionPresentSplitsGhosts(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "zelda.gba")
+	if err := os.WriteFile(real, []byte{0x01}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	games := []Game{
+		{ID: "a", Title: "Zelda", Path: real},
+		{ID: "b", Title: "Battletoads", Path: filepath.Join(dir, "gone", "battletoads.nes")},
+		{ID: "c", Title: "NoPath"},
+	}
+	present, missing := PartitionPresent(games)
+	if len(present) != 1 || present[0].ID != "a" {
+		t.Fatalf("present = %+v", present)
+	}
+	if len(missing) != 2 || missing[0].ID != "b" || missing[1].ID != "c" {
+		t.Fatalf("missing = %+v", missing)
+	}
+}
+
 func TestParseTitle(t *testing.T) {
 	title, region, tags := ParseTitle("Legend of Zelda, The - Link's Awakening DX (USA, Europe)")
 	if title != "Legend of Zelda, The - Link's Awakening DX" {

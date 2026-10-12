@@ -332,7 +332,7 @@ func TestTrackedRenameSweepsOldCollection(t *testing.T) {
 	track := filepath.Join(dir, "lib", "steam-collections.json")
 	cfg := config.DefaultSteamConfig()
 	exe := filepath.Join(dir, "cartridge")
-	games := []rom.Game{testGame("id1", "Zelda", "gba", "Game Boy Advance")}
+	games := []rom.Game{testGame(t, "id1", "Zelda", "gba", "Game Boy Advance")}
 	if _, err := SyncFileTracked(shortcuts, games, cfg, exe, dir, false, "7", track); err != nil {
 		t.Fatal(err)
 	}

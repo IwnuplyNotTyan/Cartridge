@@ -191,6 +191,31 @@ func (g Game) ShortID() string {
 	return g.ID
 }
 
+// ExistsOnDisk reports whether the game's container file is present.
+// Library rows outlive deleted ROMs (Merge keeps them), so callers that
+// act on games — Steam sync above all — must skip the missing ones
+// instead of resurrecting ghosts.
+func (g Game) ExistsOnDisk() bool {
+	if strings.TrimSpace(g.Path) == "" {
+		return false
+	}
+	st, err := os.Stat(g.Path)
+	return err == nil && !st.IsDir()
+}
+
+// PartitionPresent splits games into present-on-disk and missing (ghosts:
+// library rows whose container file is gone). Order-stable.
+func PartitionPresent(games []Game) (present, missing []Game) {
+	for _, g := range games {
+		if g.ExistsOnDisk() {
+			present = append(present, g)
+		} else {
+			missing = append(missing, g)
+		}
+	}
+	return present, missing
+}
+
 // max sniff / hash-handle sizes.
 const (
 	sniffLen       = 0x400

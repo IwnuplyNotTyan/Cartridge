@@ -10,6 +10,19 @@ import (
 	"cartridge/internal/rom"
 )
 
+func testRomGame(t *testing.T, id string) rom.Game {
+	t.Helper()
+	// Real file: sync skips library ghosts missing from disk.
+	f, err := os.CreateTemp(t.TempDir(), "rom-*.gba")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return rom.Game{ID: id, Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance", Path: f.Name()}
+}
+
 func writePNG(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -51,7 +64,7 @@ func TestSyncDeploysGridArt(t *testing.T) {
 	cfg := config.DefaultSteamConfig()
 	cfg.IconsDir = iconsDir
 	games := []rom.Game{
-		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+		testRomGame(t, "gameid0001"),
 	}
 	writePNG(t, filepath.Join(iconsDir, "ga", "me", "gameid0001.png"))
 	res, err := SyncFile(filepath.Join(ud, "shortcuts.vdf"), games, cfg, "/usr/bin/cartridge", "/usr/bin", false)
@@ -119,7 +132,7 @@ func TestSyncDeploysHero(t *testing.T) {
 	cfg := config.DefaultSteamConfig()
 	cfg.IconsDir = iconsDir
 	games := []rom.Game{
-		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+		testRomGame(t, "gameid0001"),
 	}
 	writePNG(t, filepath.Join(iconsDir, "ga", "me", "gameid0001.png"))
 	writePNG(t, filepath.Join(iconsDir, "ga", "me", "gameid0001_hero.png"))
@@ -169,7 +182,7 @@ func TestSyncDeploysWideCapsule(t *testing.T) {
 	cfg := config.DefaultSteamConfig()
 	cfg.IconsDir = iconsDir
 	games := []rom.Game{
-		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+		testRomGame(t, "gameid0001"),
 	}
 	// Distinct contents so slots are distinguishable.
 	icon := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x11}, 600)...)
@@ -230,7 +243,7 @@ func TestSyncWideFallsBackToIcon(t *testing.T) {
 	cfg := config.DefaultSteamConfig()
 	cfg.IconsDir = iconsDir
 	games := []rom.Game{
-		{ID: "gameid0001", Title: "Zelda", ConsoleID: "gba", ConsoleName: "Game Boy Advance"},
+		testRomGame(t, "gameid0001"),
 	}
 	// Icon only, no wide capsule cached.
 	writePNG(t, filepath.Join(iconsDir, "ga", "me", "gameid0001.png"))

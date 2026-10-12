@@ -64,6 +64,18 @@ func reportScan(cmd *cobra.Command, dryRun, prune bool) error {
 			return err
 		}
 	}
+	// Ghosts: library rows whose files are gone (kept by Merge unless
+	// --prune). They still sync to Steam, so report them loudly.
+	scannedSet := map[string]bool{}
+	for _, g := range scanned {
+		scannedSet[g.ID] = true
+	}
+	missing := 0
+	for _, g := range after {
+		if !scannedSet[g.ID] {
+			missing++
+		}
+	}
 	afterSet := map[string]bool{}
 	for _, g := range after {
 		afterSet[g.ID] = true
@@ -84,6 +96,9 @@ func reportScan(cmd *cobra.Command, dryRun, prune bool) error {
 	cprintf(cmd, "  %s\n", kv("scanned", fmt.Sprintf("%d file(s) -> %d game(s)", len(scanned), len(after))))
 	cprintf(cmd, "  %s\n", kv("added", fmt.Sprintf("%d", added)))
 	cprintf(cmd, "  %s\n", kv("removed", fmt.Sprintf("%d", removed)))
+	if missing > 0 {
+		cprintf(cmd, "  %s\n", warn(fmt.Sprintf("%d game(s) in library whose files are gone (scan --prune to drop, steam prune to unlist from Steam)", missing)))
+	}
 	if dryRun {
 		cprintf(cmd, "  %s\n", dimStyle.Render("(dry run — library not written)"))
 	} else {

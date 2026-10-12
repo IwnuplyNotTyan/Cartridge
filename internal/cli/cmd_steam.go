@@ -297,6 +297,9 @@ func newSteamAddCmd() *cobra.Command {
 				}
 				return nil
 			}
+			if !g.ExistsOnDisk() {
+				return fmt.Errorf("game file missing on disk: %s (scan --prune drops it from the library)", g.Path)
+			}
 			for _, t := range targets {
 				res, err := steam.SyncFileTracked(t.Path, []rom.Game{g}, a.cfg.Steam, exe, startDir, false, t.UserID, steam.TrackFilePath(a.cfg.Library))
 				if err != nil {
@@ -345,13 +348,21 @@ func newSteamAddAllCmd() *cobra.Command {
 			cprintf(cmd, "%s\n\n", banner("Steam sync", fmt.Sprintf("%d game(s)", len(games))))
 			if dryRun {
 				shown := 0
+				missing := 0
 				for _, g := range games {
+					if !g.ExistsOnDisk() {
+						missing++
+						continue
+					}
 					s := steam.BuildShortcut(g, a.cfg.Steam, exe, startDir)
 					cprintf(cmd, "  + %-5s %-40s %s\n", consoleShort(g), truncate(s.AppName, 40), dimStyle.Render(strings.Join(s.Tags, ", ")))
 					if shown++; shown >= 20 {
 						cprintf(cmd, "  %s\n", dimStyle.Render(fmt.Sprintf("… and %d more", len(games)-shown)))
 						break
 					}
+				}
+				if missing > 0 {
+					cprintf(cmd, "  %s\n", warn(fmt.Sprintf("%d game(s) skipped (files missing) — steam prune removes their shortcuts, scan --prune drops them from the library", missing)))
 				}
 				for _, t := range targets {
 					cprintf(cmd, "  %s\n", kv("would write", fmt.Sprintf("user %s: %s", t.UserID, t.Path)))
@@ -365,6 +376,7 @@ func newSteamAddAllCmd() *cobra.Command {
 			for _, r := range results {
 				cprintf(cmd, "  %s user %s: +%d kept %d pruned %d total %d, %s\n     %s\n",
 					ok(""), r.UserID, r.Added, r.Kept, r.Removed, r.Total, collSummary(r), dimStyle.Render(r.Path))
+				missingSummary(cmd, r)
 				if r.IconsApplied > 0 || r.GridWithArt > 0 || r.WideWithArt > 0 || r.HeroWithArt > 0 || r.LogoWithArt > 0 {
 					cprintf(cmd, "     %s\n", dimStyle.Render(fmt.Sprintf("icons: %d applied, %d grid new / %d with art; wides: %d new / %d with art; heroes: %d new / %d with art; logos: %d new / %d with art", r.IconsApplied, r.GridDeployed, r.GridWithArt, r.WideDeployed, r.WideWithArt, r.HeroDeployed, r.HeroWithArt, r.LogoDeployed, r.LogoWithArt)))
 				}
@@ -437,6 +449,9 @@ func newSteamPruneCmd() *cobra.Command {
 					}
 					keep := map[string]bool{}
 					for _, g := range a.games {
+						if !g.ExistsOnDisk() {
+							continue // ghosts count as stale too
+						}
 						keep[steam.LaunchOptionsFor(g)] = true
 					}
 					stale := 0
@@ -455,6 +470,7 @@ func newSteamPruneCmd() *cobra.Command {
 			}
 			for _, r := range results {
 				cprintf(cmd, "  %s user %s: pruned %d, total %d (%s), %s\n", ok(""), r.UserID, r.Removed, r.Total, dimStyle.Render(r.Path), collSummary(r))
+				missingSummary(cmd, r)
 			}
 			warnSteamRunning(cmd)
 			return nil
@@ -877,6 +893,15 @@ func onOff(b bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// missingSummary warns about library ghosts skipped by a sync: their ROM
+// files are gone, so nothing was (re)created for them. `steam prune`
+// removes their shortcuts/collections, `scan --prune` drops the rows.
+func missingSummary(cmd *cobra.Command, r steam.SyncResult) {
+	if r.SkippedMissing > 0 {
+		cprintf(cmd, "     %s\n", warn(fmt.Sprintf("%d game(s) skipped (files missing) — steam prune removes their shortcuts, scan --prune drops them from the library", r.SkippedMissing)))
+	}
 }
 
 // collSummary renders the collections part of a sync result line.

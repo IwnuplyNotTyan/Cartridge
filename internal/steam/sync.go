@@ -77,6 +77,9 @@ type SyncResult struct {
 	// Logo overlays attached from the local cache.
 	LogoDeployed int
 	LogoWithArt  int
+	// Games skipped because their ROM file is gone from disk (library
+	// ghosts): never (re)created, and pruned like any other stale game.
+	SkippedMissing int
 }
 
 // targetAppIDs splits this target's shortcuts into current (launching our
@@ -153,6 +156,13 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 	if err != nil {
 		return res, err
 	}
+	// Ghosts first: library rows whose ROM file is gone from disk are
+	// never (re)created — and with prune their shortcuts/collections go
+	// like any other stale game. Without this every sync resurrects
+	// deleted ROMs in Steam (shortcuts + per-console collections).
+	present, missing := rom.PartitionPresent(games)
+	res.SkippedMissing = len(missing)
+	games = present
 	beforeByLaunch := map[string]bool{}
 	oldManaged := map[uint32]bool{}
 	oldLaunch := map[uint32]string{}
@@ -265,6 +275,17 @@ func syncFileTracked(path string, games []rom.Game, cfg config.SteamConfig, exe,
 	if prune {
 		for a := range managed {
 			if !current[a] {
+				drop[a] = true
+			}
+		}
+		// Shortcuts this prune just deleted are already gone from the
+		// post-prune managed set above — but their appids must still be
+		// dropped from collections, otherwise prune removes shortcuts
+		// while their per-console collections keep the stale members
+		// forever. oldManaged is the pre-prune set, so the difference
+		// is exactly what this run deleted.
+		for a := range oldManaged {
+			if !managed[a] {
 				drop[a] = true
 			}
 		}
