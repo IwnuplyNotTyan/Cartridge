@@ -88,6 +88,9 @@ type Model struct {
 	romDir  string
 	libPath string
 	status  string
+	// statusToken versions bar messages: expiry timers only clear the
+	// message they were scheduled for (see status.go).
+	statusToken int
 
 	recipes []emulate.Recipe
 	// overrides persists per-game emulator/core choices from metadata (n/p).

@@ -168,15 +168,13 @@ func (m Model) metaCopy() (tea.Model, tea.Cmd) {
 	}
 	row := m.metaRows[m.metaCur]
 	if row.sep || strings.TrimSpace(row.copy) == "" {
-		m.status = i18n.T("status.copy_empty")
-		return m, nil
+		return m, m.setStatus(i18n.T("status.copy_empty"))
 	}
 	what := row.label
 	if what == "" {
 		what = row.copy
 	}
-	m.status = i18n.T("status.copied", what)
-	return m, copyCmd(row.copy)
+	return m, tea.Batch(copyCmd(row.copy), m.setStatus(i18n.T("status.copied", what)))
 }
 
 // metaSelect activates the cursor row: expands the cheat list, toggles
@@ -211,11 +209,14 @@ func (m *Model) metaSelect() (tea.Model, tea.Cmd) {
 					break // bad file or nowhere to create: copy instead
 				}
 				if err := m.materializeCheats(); err != nil {
-					m.status = i18n.T("status.save_fail", err)
-					return *m, nil
+					return *m, m.setStatus(i18n.T("status.save_fail", err))
 				}
 			} else {
-				m.ensureCheatsOn()
+				if cmd := m.ensureCheatsOn(); cmd != nil {
+					m.cheatsOpen = true
+					m.refreshMeta()
+					return *m, cmd
+				}
 			}
 			m.cheatsOpen = true
 			m.refreshMeta()
@@ -245,27 +246,23 @@ func (m Model) launchModSelected() (tea.Model, tea.Cmd) {
 	game := *g
 	r := m.gameRecipe(game)
 	if r == nil {
-		m.status = i18n.T("status.no_recipe", game.Title)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.no_recipe", game.Title))
 	}
 	instance, _, err := mods.EnsureInstance(m.patchedDir, game.ID, game.Path, game.Inner, src)
 	if err != nil {
-		m.status = i18n.T("status.launch_fail", err)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.launch_fail", err))
 	}
 	game.Path = instance
 	game.Inner = ""
 	cmd, err := m.launchCmd(game, r)
 	if err != nil {
-		m.status = i18n.T("status.launch_fail", err)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.launch_fail", err))
 	}
 	res, runCmd := m.startRun(game, cmd)
 	if mm, ok := res.(Model); ok && mm.run != nil && mm.run.gameID == game.ID && !mm.run.done {
-		mm.status = i18n.T("status.mod.launching", game.Title, filepath.Base(src))
 		mm.modKey = "" // a fresh instance changes the [built] marks
 		mm.refreshMeta()
-		return mm, runCmd
+		return mm, tea.Batch(runCmd, mm.setStatus(i18n.T("status.mod.launching", game.Title, filepath.Base(src))))
 	}
 	return res, runCmd
 }
@@ -274,18 +271,18 @@ func (m Model) launchModSelected() (tea.Model, tea.Cmd) {
 // exact name RetroArch autopatches by, or removes that copy when it is
 // already there. A deployed file with foreign bytes (hand-placed, not
 // ours) is reported and kept.
-func (m *Model) toggleSoftpatch() {
+func (m *Model) toggleSoftpatch() tea.Cmd {
 	if m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
-		return
+		return nil
 	}
 	row := m.metaRows[m.metaCur]
 	if row.kind != "mod" || strings.TrimSpace(row.copy) == "" {
-		return
+		return nil
 	}
 	src := row.copy
 	g := m.selected()
 	if g == nil {
-		return
+		return nil
 	}
 	// Plan fresh at action time: the cache may predate a hand-placed
 	// file beside the ROM, and deploying over it would destroy foreign
@@ -296,8 +293,7 @@ func (m *Model) toggleSoftpatch() {
 	if !active {
 		chk := m.modCheck[src]
 		if err := mods.Deploy(src, dst); err != nil {
-			m.status = i18n.T("status.save_fail", err)
-			return
+			return m.setStatus(i18n.T("status.save_fail", err))
 		}
 		m.modKey = "" // deployed bytes sit outside the watched dirs: recollect
 		m.refreshMeta()
@@ -305,39 +301,36 @@ func (m *Model) toggleSoftpatch() {
 		if d := modCheckDetail(*g, chk); d != "" {
 			msg += " - " + d
 		}
-		m.status = msg
-		return
+		return m.setStatus(msg)
 	}
 	if err := mods.Undeploy(src, dst); err != nil {
 		if errors.Is(err, mods.ErrNotOurs) {
-			m.status = i18n.T("status.mod.not_ours", filepath.Base(dst))
-		} else {
-			m.status = i18n.T("status.save_fail", err)
+			return m.setStatus(i18n.T("status.mod.not_ours", filepath.Base(dst)))
 		}
-		return
+		return m.setStatus(i18n.T("status.save_fail", err))
 	}
 	m.modKey = ""
 	m.refreshMeta()
-	m.status = i18n.T("status.mod.removed", filepath.Base(dst))
+	return m.setStatus(i18n.T("status.mod.removed", filepath.Base(dst)))
 }
 
 // toggleFavorite flips the favorite mark on the selected game and
 // persists it. The shelf rebuilds in place with the cursor kept on the
 // same game, which just moves sections.
-func (m *Model) toggleFavorite() {
+func (m *Model) toggleFavorite() tea.Cmd {
 	g := m.selected()
 	if g == nil || m.favorites == nil {
-		return
+		return nil
 	}
 	id := g.ID
+	var note string
 	if m.favorites.Toggle(id) {
-		m.status = i18n.T("status.fav.added", g.Title)
+		note = i18n.T("status.fav.added", g.Title)
 	} else {
-		m.status = i18n.T("status.fav.removed", g.Title)
+		note = i18n.T("status.fav.removed", g.Title)
 	}
 	if err := m.favorites.Save(); err != nil {
-		m.status = i18n.T("status.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.save_fail", err))
 	}
 	m.refilter()
 	for i := range m.filtered {
@@ -347,6 +340,7 @@ func (m *Model) toggleFavorite() {
 		}
 	}
 	m.refreshMeta()
+	return m.setStatus(note)
 }
 
 // copyCmd writes text to the terminal clipboard via OSC52 (works over SSH;
@@ -364,27 +358,27 @@ func copyCmd(s string) tea.Cmd {
 
 // cycleAlt switches the cursor row option: another matching emulator on
 // the recipe row, another core on the core row. n moves forward, p back.
-func (m *Model) cycleAlt(next bool) {
+func (m *Model) cycleAlt(next bool) tea.Cmd {
 	g := m.selected()
 	if g == nil || m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
-		return
+		return nil
 	}
 	// saveChoice persists the per-game choice; on failure the status
 	// reports it and the meta view still reflects the in-memory pick.
-	save := func(ch overrides.Choice) {
+	save := func(ch overrides.Choice) tea.Cmd {
 		m.overrides.Set(g.ID, ch)
 		if err := m.overrides.Save(); err != nil {
-			m.status = i18n.T("status.save_fail", err)
-			return
+			return m.setStatus(i18n.T("status.save_fail", err))
 		}
-		m.status = ""
+		m.clearStatus()
 		m.refreshMeta()
+		return nil
 	}
 	switch m.metaRows[m.metaCur].kind {
 	case "recipe":
 		alts := emulate.MatchAll(m.recipes, *g)
 		if len(alts) < 2 {
-			return
+			return nil
 		}
 		cur := 0
 		if c, ok := m.overrides.Get(g.ID); ok {
@@ -402,15 +396,15 @@ func (m *Model) cycleAlt(next bool) {
 		}
 		ch, _ := m.overrides.Get(g.ID)
 		ch.Recipe = alts[cur].Name
-		save(ch)
+		return save(ch)
 	case "core":
 		r := m.gameRecipe(*g)
 		if r == nil {
-			return
+			return nil
 		}
 		cs := r.CoresFor(g.ConsoleID)
 		if len(cs) < 2 {
-			return
+			return nil
 		}
 		_, _, cur := m.gameCore(*g, r)
 		if next {
@@ -420,8 +414,9 @@ func (m *Model) cycleAlt(next bool) {
 		}
 		ch, _ := m.overrides.Get(g.ID)
 		ch.Core = cs[cur]
-		save(ch)
+		return save(ch)
 	}
+	return nil
 }
 
 // buildMetaRows collects the navigable metadata rows for the selected game.

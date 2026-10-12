@@ -79,8 +79,7 @@ func cleanRunLine(s string) string {
 // emulator instances.
 func (m Model) startRun(game rom.Game, cmd *exec.Cmd) (tea.Model, tea.Cmd) {
 	if m.run != nil && !m.run.done {
-		m.status = i18n.T("status.run.busy", m.run.title)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.run.busy", m.run.title))
 	}
 	ch := make(chan string, 256)
 	m.runCh = ch
@@ -88,14 +87,13 @@ func (m Model) startRun(game rom.Game, cmd *exec.Cmd) (tea.Model, tea.Cmd) {
 	m.runView = true
 	m.runScroll = 0
 	m.followRun = true
-	m.status = i18n.T("status.launching", game.Title)
 	starter := func() tea.Msg {
 		if err := runToChannel(cmd, ch); err != nil {
 			return launchDoneMsg{gameID: game.ID, dur: time.Since(m.run.started), err: err}
 		}
 		return launchDoneMsg{gameID: game.ID, dur: time.Since(m.run.started)}
 	}
-	return m, tea.Batch(starter, waitRunLog(ch))
+	return m, tea.Batch(starter, waitRunLog(ch), m.setStatus(i18n.T("status.launching", game.Title)))
 }
 
 // runToChannel starts cmd with piped stdout+stderr, forwards every line

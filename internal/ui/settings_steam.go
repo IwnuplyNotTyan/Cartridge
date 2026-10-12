@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"cartridge/internal/i18n"
@@ -81,22 +82,20 @@ func (m Model) steamCategoryFor(id, name string) string {
 
 // toggleSteamAllGames flips the shared "all games" root category and
 // re-syncs so existing shortcuts/collections pick the new names up.
-func (m *Model) toggleSteamAllGames() {
+func (m *Model) toggleSteamAllGames() tea.Cmd {
 	m.steam.AllGames = !m.steam.AllGames
 	if err := m.persistSettings(); err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
-	m.syncSteamNow(false)
+	return m.syncSteamNow(false)
 }
 
 // syncSteamNow syncs games to Steam (all or current filter) and reports.
 // prune=false here: never delete from the settings screen by surprise.
-func (m *Model) syncSteamNow(prune bool) {
+func (m *Model) syncSteamNow(prune bool) tea.Cmd {
 	targets := steam.DiscoverTargets(m.steam.Users)
 	if len(targets) == 0 {
-		m.status = i18n.T("status.steam.no_steam")
-		return
+		return m.setStatus(i18n.T("status.steam.no_steam"))
 	}
 	exe := strings.TrimSpace(m.steam.Exe)
 	if exe == "" {
@@ -104,32 +103,30 @@ func (m *Model) syncSteamNow(prune bool) {
 	}
 	results, err := steam.SyncAllTracked(m.games, m.steam, exe, "", prune, steam.TrackFilePath(m.libPath))
 	if err != nil {
-		m.status = i18n.T("status.steam.fail", err)
-		return
+		return m.setStatus(i18n.T("status.steam.fail", err))
 	}
 	added, total := 0, 0
 	for _, r := range results {
 		added += r.Added
 		total = r.Total
 	}
-	m.status = i18n.T("status.steam.synced", added, total, len(results))
+	note := i18n.T("status.steam.synced", added, total, len(results))
 	if steam.SteamRunning() {
-		m.status += " • " + i18n.T("status.steam.running")
+		note += " • " + i18n.T("status.steam.running")
 	}
+	return m.setStatus(note)
 }
 
 // addCurrentToSteam adds the selected game to Steam.
-func (m *Model) addCurrentToSteam() {
+func (m *Model) addCurrentToSteam() tea.Cmd {
 	g := m.selected()
 	if g == nil {
-		m.status = i18n.T("status.copy_empty")
-		return
+		return m.setStatus(i18n.T("status.copy_empty"))
 	}
 	game := *g
 	targets := steam.DiscoverTargets(m.steam.Users)
 	if len(targets) == 0 {
-		m.status = i18n.T("status.steam.no_steam")
-		return
+		return m.setStatus(i18n.T("status.steam.no_steam"))
 	}
 	exe := strings.TrimSpace(m.steam.Exe)
 	if exe == "" {
@@ -138,15 +135,15 @@ func (m *Model) addCurrentToSteam() {
 	done := 0
 	for _, t := range targets {
 		if _, err := steam.SyncFileTracked(t.Path, []rom.Game{game}, m.steam, exe, "", false, t.UserID, steam.TrackFilePath(m.libPath)); err != nil {
-			m.status = i18n.T("status.steam.fail", err)
-			return
+			return m.setStatus(i18n.T("status.steam.fail", err))
 		}
 		done++
 	}
-	m.status = i18n.T("status.steam.added", game.Title, done)
+	note := i18n.T("status.steam.added", game.Title, done)
 	if steam.SteamRunning() {
-		m.status += " • " + i18n.T("status.steam.running")
+		note += " • " + i18n.T("status.steam.running")
 	}
+	return m.setStatus(note)
 }
 
 // renderSteamTab renders the Steam integration tab: main settings,

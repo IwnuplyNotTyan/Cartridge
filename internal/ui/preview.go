@@ -108,10 +108,8 @@ func (m Model) openArtSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if st, err := os.Stat(row.copy); err != nil || st.IsDir() {
-		m.status = i18n.T("status.art.missing")
 		m.refreshMeta()
-		return m, nil
+		return m, m.setStatus(i18n.T("status.art.missing"))
 	}
-	m.status = i18n.T("status.art.opening", row.label)
-	return m, previewArtCmd(row.copy, row.label)
+	return m, tea.Batch(previewArtCmd(row.copy, row.label), m.setStatus(i18n.T("status.art.opening", row.label)))
 }

@@ -61,10 +61,11 @@ func TestLaunchSecondRunBusy(t *testing.T) {
 	m := runTestModel(t)
 	out, _ := m.Update(keyMsg("x"))
 	m = out.(Model)
-	out, cmd := m.Update(keyMsg("x"))
+	first := m.run
+	out, _ = m.Update(keyMsg("x"))
 	m = out.(Model)
-	if cmd != nil {
-		t.Fatalf("second launch must not start")
+	if m.run != first {
+		t.Fatalf("second launch must not replace the run")
 	}
 	if !strings.Contains(m.status, "already running") {
 		t.Fatalf("status = %q, want busy hint", m.status)

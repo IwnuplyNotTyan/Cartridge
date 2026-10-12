@@ -40,11 +40,11 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.settTab == TabRecipes {
 			switch msg.Type {
 			case tea.KeyEnter:
-				m.saveRecipeEdit()
+				editTimer := m.saveRecipeEdit()
 				m.settEditing = false
 				m.settBuf = nil
 				m.settPatchField = ""
-				return m, nil
+				return m, editTimer
 			case tea.KeyEsc:
 				m.settEditing = false
 				m.settBuf = nil
@@ -95,15 +95,16 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if err := m.persistSettings(); err != nil {
-					m.status = i18n.T("status.sett.save_fail", err)
-				} else {
-					// Naming edits re-sync at once so existing Steam
-					// shortcuts/collections pick the new names up.
-					m.syncSteamNow(false)
+					m.settEditing = false
+					m.settBuf = nil
+					return m, m.setStatus(i18n.T("status.sett.save_fail", err))
 				}
+				// Naming edits re-sync at once so existing Steam
+				// shortcuts/collections pick the new names up.
+				syncTimer := m.syncSteamNow(false)
 				m.settEditing = false
 				m.settBuf = nil
-				return m, nil
+				return m, syncTimer
 			case tea.KeyEsc:
 				m.settEditing = false
 				m.settBuf = nil
@@ -129,10 +130,10 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.settTab == TabIcons {
 			switch msg.Type {
 			case tea.KeyEnter:
-				m.saveIconsEdit(strings.TrimSpace(string(m.settBuf)))
+				editTimer := m.saveIconsEdit(strings.TrimSpace(string(m.settBuf)))
 				m.settEditing = false
 				m.settBuf = nil
-				return m, nil
+				return m, editTimer
 			case tea.KeyEsc:
 				m.settEditing = false
 				m.settBuf = nil
@@ -165,14 +166,22 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				// Switching the games dir rescans lazily on next r;
 				// switching recipes/patches paths reloads the overlay.
+				var reloadTimer tea.Cmd
 				if m.settCur == 2 || m.settCur == 3 {
-					m.reloadRecipes()
+					reloadTimer = m.reloadRecipes()
 				}
 				if err := m.persistSettings(); err != nil {
-					m.status = i18n.T("status.sett.save_fail", err)
+					m.settEditing = false
+					m.settBuf = nil
+					return m, tea.Batch(reloadTimer, m.setStatus(i18n.T("status.sett.save_fail", err)))
 				} else if m.status == "" || !strings.Contains(m.status, "reloaded") {
-					m.status = i18n.T("status.sett.saved")
+					m.settEditing = false
+					m.settBuf = nil
+					return m, tea.Batch(reloadTimer, m.setStatus(i18n.T("status.sett.saved")))
 				}
+				m.settEditing = false
+				m.settBuf = nil
+				return m, reloadTimer
 			}
 			m.settEditing = false
 			m.settBuf = nil
@@ -329,7 +338,7 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, k.Select) {
 			opts := langOptions()
 			if m.settCur < len(opts) {
-				m.applyLanguage(opts[m.settCur][0])
+				return m, m.applyLanguage(opts[m.settCur][0])
 			}
 			return m, nil
 		}
@@ -352,23 +361,18 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.startRecipeEdit("args")
 			return m, nil
 		case "d", "D":
-			m.dropRecipePatch()
-			return m, nil
+			return m, m.dropRecipePatch()
 		case "J":
-			m.moveRecipe(+1)
-			return m, nil
+			return m, m.moveRecipe(+1)
 		case "K":
-			m.moveRecipe(-1)
-			return m, nil
+			return m, m.moveRecipe(-1)
 		}
 		switch msg.Type {
 		case tea.KeyDelete, tea.KeyBackspace:
-			m.dropRecipePatch()
-			return m, nil
+			return m, m.dropRecipePatch()
 		}
 		if key.Matches(msg, k.Rescan) {
-			m.reloadRecipes()
-			return m, nil
+			return m, m.reloadRecipes()
 		}
 	case TabPaths:
 		if key.Matches(msg, k.Select) {
@@ -380,22 +384,21 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if key.Matches(msg, k.Rescan) {
-			m.reloadRecipes()
-			return m, nil
+			return m, m.reloadRecipes()
 		}
 	case TabSteam:
 		if key.Matches(msg, k.Select) {
 			switch m.settCur {
 			case steamRowAuto:
-				m.toggleSteamAutoAdd()
+				return m, m.toggleSteamAutoAdd()
 			case steamRowAll:
-				m.toggleSteamAllGames()
+				return m, m.toggleSteamAllGames()
 			case steamRowPrefix, steamRowTemplate, steamRowExe:
 				m.settEditing = true
 				m.settBuf = []rune(m.steamFieldValue(m.settCur))
 			default:
 				if m.steamSyncRow(m.settCur) {
-					m.syncSteamNow(false)
+					return m, m.syncSteamNow(false)
 				} else if _, ok := m.steamConsoleAt(m.settCur); ok {
 					m.settEditing = true
 					m.settBuf = []rune(m.steamFieldValue(m.settCur))
@@ -406,35 +409,31 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Space also toggles for discoverability.
 		if msg.String() == " " && (m.settCur == steamRowAuto || m.settCur == steamRowAll) {
 			if m.settCur == steamRowAuto {
-				m.toggleSteamAutoAdd()
-			} else {
-				m.toggleSteamAllGames()
+				return m, m.toggleSteamAutoAdd()
 			}
-			return m, nil
+			return m, m.toggleSteamAllGames()
 		}
 		if key.Matches(msg, k.Rescan) {
-			m.syncSteamNow(false)
-			return m, nil
+			return m, m.syncSteamNow(false)
 		}
 	case TabIcons:
 		if key.Matches(msg, k.Select) {
 			switch m.settCur {
 			case iconsRowProvider:
-				m.cycleIconsProvider()
+				return m, m.cycleIconsProvider()
 			case iconsRowKey, iconsRowDir:
 				m.settEditing = true
 				m.settBuf = []rune(m.iconsFieldValue(m.settCur))
 			case iconsRowSync:
 				return m, m.startIconsSync()
 			case iconsRowPrune:
-				m.pruneIconsCache()
+				return m, m.pruneIconsCache()
 			}
 			return m, nil
 		}
 		// Space also cycles for discoverability.
 		if msg.String() == " " && m.settCur == iconsRowProvider {
-			m.cycleIconsProvider()
-			return m, nil
+			return m, m.cycleIconsProvider()
 		}
 		if key.Matches(msg, k.Rescan) {
 			return m, m.startIconsSync()
@@ -442,8 +441,7 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	// Global rescan from any settings tab.
 	if key.Matches(msg, k.Rescan) {
-		m.reloadRecipes()
-		return m, nil
+		return m, m.reloadRecipes()
 	}
 	return m, nil
 }

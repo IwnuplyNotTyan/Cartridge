@@ -309,10 +309,10 @@ func TestRussianRender(t *testing.T) {
 
 func TestLaunchNoRecipe(t *testing.T) {
 	m := sizedModel(t, New(sampleGames(), "/x", "/tmp/lib.json"))
-	out, cmd := m.Update(keyMsg("x"))
+	out, _ := m.Update(keyMsg("x"))
 	m = out.(Model)
-	if cmd != nil {
-		t.Fatalf("expected no command without recipes")
+	if m.runView || m.run != nil {
+		t.Fatalf("no recipe must not start a run")
 	}
 	if !strings.Contains(m.status, "no recipe") {
 		t.Fatalf("status = %q, want no-recipe hint", m.status)
@@ -1193,9 +1193,9 @@ func TestMetaModsEnterBuildFail(t *testing.T) {
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = out.(Model)
 	m = metaCursorTo(t, m, "mod")
-	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = out.(Model)
-	if cmd != nil {
+	if m.runView || m.run != nil {
 		t.Fatalf("broken base must not launch")
 	}
 	if !strings.Contains(m.status, "does not match") {

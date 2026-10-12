@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"cartridge/internal/config"
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
@@ -70,9 +72,9 @@ func (m *Model) startRecipeEdit(field string) {
 
 // saveRecipeEdit writes the edit buffer as a patch overlay and persists it.
 // The base recipes file is never rewritten; only the patches file changes.
-func (m *Model) saveRecipeEdit() {
+func (m *Model) saveRecipeEdit() tea.Cmd {
 	if len(m.baseRecipes) == 0 || m.settCur >= len(m.baseRecipes) {
-		return
+		return nil
 	}
 	name := m.baseRecipes[m.settCur].Name
 	field := m.settPatchField
@@ -114,22 +116,19 @@ func (m *Model) saveRecipeEdit() {
 	case "cheats":
 		ok, rest, err := parseFeatureBool(v)
 		if err != nil {
-			m.status = i18n.T("status.sett.patch_fail", err)
-			return
+			return m.setStatus(i18n.T("status.sett.patch_fail", err))
 		}
 		p.Cheats = &emulate.Cheats{Supported: ok, Path: rest}
 	case "achievements":
 		ok, rest, err := parseFeatureBool(v)
 		if err != nil {
-			m.status = i18n.T("status.sett.patch_fail", err)
-			return
+			return m.setStatus(i18n.T("status.sett.patch_fail", err))
 		}
 		p.Achievements = &emulate.Achievements{Supported: ok, Note: rest}
 	case "mods":
 		ok, rest, err := parseFeatureBool(v)
 		if err != nil {
-			m.status = i18n.T("status.sett.patch_fail", err)
-			return
+			return m.setStatus(i18n.T("status.sett.patch_fail", err))
 		}
 		p.Mods = &emulate.Mods{Supported: ok, Path: rest}
 	case "note":
@@ -137,8 +136,7 @@ func (m *Model) saveRecipeEdit() {
 		p.Note = &note
 	default:
 		if v == "" {
-			m.status = i18n.T("status.sett.patch_fail", fmt.Errorf("empty emulator"))
-			return
+			return m.setStatus(i18n.T("status.sett.patch_fail", fmt.Errorf("empty emulator")))
 		}
 		emu := config.ExpandPath(v)
 		p.Emulator = &emu
@@ -149,20 +147,18 @@ func (m *Model) saveRecipeEdit() {
 	}
 	updated, err := emulate.StorePatch(path, m.patches, p)
 	if err != nil {
-		m.status = i18n.T("status.sett.patch_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.patch_fail", err))
 	}
 	m.patches = updated
 	if strings.TrimSpace(m.patchesPath) == "" {
 		m.patchesPath = path
 		if err := m.persistSettings(); err != nil {
-			m.status = i18n.T("status.sett.save_fail", err)
-			return
+			return m.setStatus(i18n.T("status.sett.save_fail", err))
 		}
 	}
 	m.recipes = emulate.ApplyPatches(m.baseRecipes, m.patches)
 	m.refreshMeta()
-	m.status = i18n.T("status.sett.patch_saved", name)
+	return m.setStatus(i18n.T("status.sett.patch_saved", name))
 }
 
 // fieldBuffer renders the effective field value as an editable line.
@@ -323,32 +319,31 @@ func parseCoreNames(s string) map[string]string {
 // moveRecipe shifts the selected recipe up (dir<0) or down (dir>0) in the
 // hierarchy and saves the new order to the recipes file. The cursor follows
 // the moved recipe; patches keep applying by name. No-op at the edges.
-func (m *Model) moveRecipe(dir int) {
+func (m *Model) moveRecipe(dir int) tea.Cmd {
 	n := len(m.baseRecipes)
 	if n < 2 || m.settCur < 0 || m.settCur >= n {
-		return
+		return nil
 	}
 	j := clamp(m.settCur+dir, 0, n-1)
 	if j == m.settCur {
-		return
+		return nil
 	}
 	name := m.baseRecipes[m.settCur].Name
 	m.baseRecipes[m.settCur], m.baseRecipes[j] = m.baseRecipes[j], m.baseRecipes[m.settCur]
 	if err := emulate.SaveRecipes(m.recipesPath, m.baseRecipes); err != nil {
 		m.baseRecipes[m.settCur], m.baseRecipes[j] = m.baseRecipes[j], m.baseRecipes[m.settCur]
-		m.status = i18n.T("status.sett.recipes_save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.recipes_save_fail", err))
 	}
 	m.settCur = j
 	m.recipes = emulate.ApplyPatches(m.baseRecipes, m.patches)
 	m.refreshMeta()
-	m.status = i18n.T("status.sett.moved", name)
+	return m.setStatus(i18n.T("status.sett.moved", name))
 }
 
 // dropRecipePatch removes every patch for the selected recipe and persists.
-func (m *Model) dropRecipePatch() {
+func (m *Model) dropRecipePatch() tea.Cmd {
 	if len(m.baseRecipes) == 0 || m.settCur >= len(m.baseRecipes) {
-		return
+		return nil
 	}
 	name := m.baseRecipes[m.settCur].Name
 	path := m.patchesPath
@@ -357,13 +352,12 @@ func (m *Model) dropRecipePatch() {
 	}
 	updated, err := emulate.DropPatches(path, m.patches, name)
 	if err != nil {
-		m.status = i18n.T("status.sett.patch_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.patch_fail", err))
 	}
 	m.patches = updated
 	m.recipes = emulate.ApplyPatches(m.baseRecipes, m.patches)
 	m.refreshMeta()
-	m.status = i18n.T("status.sett.patch_dropped", name)
+	return m.setStatus(i18n.T("status.sett.patch_dropped", name))
 }
 
 // splitArgs splits an args line on spaces, keeping "quoted parts" together.

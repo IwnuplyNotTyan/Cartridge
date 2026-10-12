@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"cartridge/internal/cheats"
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
@@ -171,13 +173,13 @@ func (m *Model) materializeCheats() error {
 
 // ensureCheatsOn rewrites the file with every cheat enabled when needed,
 // so the whole list is available at once without per-cheat choices.
-func (m *Model) ensureCheatsOn() {
+func (m *Model) ensureCheatsOn() tea.Cmd {
 	if m.cheatFile == nil || len(m.cheatFile.Cheats) == 0 {
-		return
+		return nil
 	}
 	if err := m.cheatFile.Save(); err != nil {
-		m.status = i18n.T("status.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.save_fail", err))
 	}
 	m.cheatStat = statCheatFile(m.cheatPath)
+	return nil
 }

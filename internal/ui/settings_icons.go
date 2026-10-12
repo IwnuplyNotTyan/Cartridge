@@ -56,7 +56,7 @@ func maskedKey(k string) string {
 }
 
 // cycleIconsProvider steps the art source and persists it.
-func (m *Model) cycleIconsProvider() {
+func (m *Model) cycleIconsProvider() tea.Cmd {
 	cur := strings.ToLower(strings.TrimSpace(m.steam.IconsProvider))
 	if cur == "" {
 		cur = icons.ProviderAuto
@@ -70,10 +70,9 @@ func (m *Model) cycleIconsProvider() {
 	}
 	m.steam.IconsProvider = next
 	if err := m.persistSettings(); err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
-	m.status = i18n.T("status.sett.saved")
+	return m.setStatus(i18n.T("status.sett.saved"))
 }
 
 // refreshIconsStat recomputes cache numbers for the tab: file walk plus
@@ -104,7 +103,7 @@ func (m *Model) refreshIconsStat() {
 }
 
 // pruneIconsCache drops cached art for games gone from the library.
-func (m *Model) pruneIconsCache() {
+func (m *Model) pruneIconsCache() tea.Cmd {
 	cache := steam.IconsCache(m.steam)
 	keep := make(map[string]bool, len(m.games))
 	for _, g := range m.games {
@@ -112,11 +111,10 @@ func (m *Model) pruneIconsCache() {
 	}
 	removed, freed, err := cache.Prune(keep)
 	if err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
 	m.refreshIconsStat()
-	m.status = i18n.T("status.icons.pruned", removed, float64(freed)/(1<<20))
+	return m.setStatus(i18n.T("status.icons.pruned", removed, float64(freed)/(1<<20)))
 }
 
 // iconsProgMsg streams bulk-fetch progress (throttled by the sender).
@@ -154,22 +152,18 @@ func waitIconsProgress(ch chan iconsProgMsg) tea.Cmd {
 // a 10k-game fetch runs for minutes while the shelf stays usable.
 func (m *Model) startIconsSync() tea.Cmd {
 	if m.iconsActive {
-		m.status = i18n.T("status.icons.busy")
-		return nil
+		return m.setStatus(i18n.T("status.icons.busy"))
 	}
 	st := m.steam
 	cache := steam.IconsCache(st)
 	if cache.Provider == icons.ProviderOff {
-		m.status = i18n.T("status.icons.off")
-		return nil
+		return m.setStatus(i18n.T("status.icons.off"))
 	}
 	if cache.Provider == icons.ProviderSteamGrid && strings.TrimSpace(cache.GridDBKey) == "" {
-		m.status = i18n.T("status.icons.no_key")
-		return nil
+		return m.setStatus(i18n.T("status.icons.no_key"))
 	}
 	if len(m.games) == 0 {
-		m.status = i18n.T("status.copy_empty")
-		return nil
+		return m.setStatus(i18n.T("status.copy_empty"))
 	}
 	roms := m.games
 	libPath := m.libPath
@@ -178,7 +172,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 	m.iconsActive = true
 	m.iconsTotal = len(roms)
 	m.iconsDone, m.iconsOk, m.iconsFail = 0, 0, 0
-	m.status = i18n.T("status.icons.fetching", 0, len(roms))
+	fetchTimer := m.setStatus(i18n.T("status.icons.fetching", 0, len(roms)))
 	fetch := func() tea.Msg {
 		var n int64
 		res := cache.Sync(context.Background(), steam.ToIconGames(roms), false, 0, func(_ string, ok bool) {
@@ -219,7 +213,7 @@ func (m *Model) startIconsSync() tea.Cmd {
 		done.runningNote = steam.SteamRunning()
 		return done
 	}
-	return tea.Batch(fetch, waitIconsProgress(ch))
+	return tea.Batch(fetch, waitIconsProgress(ch), fetchTimer)
 }
 
 // renderIconsTab renders the Icons integration tab: art source, key and
@@ -280,7 +274,7 @@ func (m Model) renderIconsRow(i, w int) string {
 }
 
 // saveIconsEdit persists the key/dir text rows.
-func (m *Model) saveIconsEdit(v string) {
+func (m *Model) saveIconsEdit(v string) tea.Cmd {
 	switch m.settCur {
 	case iconsRowKey:
 		m.steam.SteamGridDBKey = strings.TrimSpace(v)
@@ -288,14 +282,14 @@ func (m *Model) saveIconsEdit(v string) {
 		m.steam.IconsDir = config.ExpandPath(strings.TrimSpace(v))
 	}
 	if err := m.persistSettings(); err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
 	// A moved cache dir changes where art attaches from: re-apply at once.
 	if m.settCur == iconsRowDir {
-		m.syncSteamNow(false)
-	} else {
-		m.status = i18n.T("status.sett.saved")
+		syncTimer := m.syncSteamNow(false)
+		m.refreshIconsStat()
+		return syncTimer
 	}
 	m.refreshIconsStat()
+	return m.setStatus(i18n.T("status.sett.saved"))
 }

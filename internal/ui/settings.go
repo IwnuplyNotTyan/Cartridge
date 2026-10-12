@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"cartridge/internal/config"
 	"cartridge/internal/emulate"
 	"cartridge/internal/i18n"
@@ -158,19 +160,18 @@ func (m *Model) persistSettings() error {
 }
 
 // toggleSteamAutoAdd flips auto-add and persists.
-func (m *Model) toggleSteamAutoAdd() {
+func (m *Model) toggleSteamAutoAdd() tea.Cmd {
 	m.steam.AutoAdd = !m.steam.AutoAdd
 	if err := m.persistSettings(); err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
-	m.status = i18n.T("status.sett.saved")
+	return m.setStatus(i18n.T("status.sett.saved"))
 }
 
 // applyLanguage switches the UI language at once and persists it.
 // The stored value is always a code ("auto", "en", "ru", "de", ...),
 // whatever spelling the user had before.
-func (m *Model) applyLanguage(raw string) {
+func (m *Model) applyLanguage(raw string) tea.Cmd {
 	l := i18n.Parse(raw)
 	if l == i18n.Auto {
 		m.langRaw = "auto"
@@ -182,23 +183,21 @@ func (m *Model) applyLanguage(raw string) {
 	m.setGames(m.games)
 	m.refreshMeta()
 	if err := m.persistSettings(); err != nil {
-		m.status = i18n.T("status.sett.save_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}
-	m.status = ""
+	m.clearStatus()
+	return nil
 }
 
 // reloadRecipes re-reads recipes+patches from disk and re-applies the overlay.
-func (m *Model) reloadRecipes() {
+func (m *Model) reloadRecipes() tea.Cmd {
 	base, err := emulate.Load(m.recipesPath)
 	if err != nil {
-		m.status = i18n.T("status.sett.reload_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.reload_fail", err))
 	}
 	patches, err := emulate.LoadPatches(m.patchesPath)
 	if err != nil {
-		m.status = i18n.T("status.sett.reload_fail", err)
-		return
+		return m.setStatus(i18n.T("status.sett.reload_fail", err))
 	}
 	m.baseRecipes = base
 	m.patches = patches
@@ -208,7 +207,7 @@ func (m *Model) reloadRecipes() {
 	}
 	m.settField = clamp(m.settField, -1, len(recipeFields())-1)
 	m.refreshMeta()
-	m.status = i18n.T("status.sett.reloaded", len(base), len(emulate.AppliedPatches(base, patches)))
+	return m.setStatus(i18n.T("status.sett.reloaded", len(base), len(emulate.AppliedPatches(base, patches))))
 }
 
 // effectiveRecipe returns the effective (patched) recipe for the selected row.

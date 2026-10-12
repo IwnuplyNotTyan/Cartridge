@@ -37,53 +37,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// had games, e.g. an unmounted drive) keeps the stored
 		// collection instead of wiping the library.
 		if len(msg.games) == 0 && len(m.games) > 0 && len(msg.errs) > 0 {
-			m.status = i18n.T("status.rescan_err",
+			return m, m.setStatus(i18n.T("status.rescan_err",
 				0, pluralWord(0, "word.rom"),
-				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
-			return m, nil
+				len(msg.errs), pluralWord(len(msg.errs), "word.error")))
 		}
 		m.setGames(msg.games)
 		if m.libPath != "" {
 			if err := library.Save(m.libPath, m.games); err != nil {
-				m.status = i18n.T("status.save_fail", err)
 				m.sizeMeta()
 				m.refreshMeta()
-				return m, nil
+				return m, m.setStatus(i18n.T("status.save_fail", err))
 			}
 		}
+		var note string
 		if len(msg.errs) > 0 {
-			m.status = i18n.T("status.rescan_err",
+			note = i18n.T("status.rescan_err",
 				len(m.games), pluralWord(len(m.games), "word.rom"),
 				len(msg.errs), pluralWord(len(msg.errs), "word.error"))
 		} else {
-			m.status = i18n.T("status.rescan", len(m.games), pluralWord(len(m.games), "word.rom"))
+			note = i18n.T("status.rescan", len(m.games), pluralWord(len(m.games), "word.rom"))
 		}
 		// Steam auto-add on TUI rescan (same rule as CLI startup).
 		if m.steam.AutoAdd && len(m.games) > 0 && len(steam.DiscoverTargets(m.steam.Users)) > 0 {
-			base := m.status
-			m.syncSteamNow(false)
+			steamTimer := m.syncSteamNow(false)
 			// Keep both facts visible: rescan count + steam result.
 			if m.status != "" {
-				m.status = base + " • " + m.status
+				note = note + " • " + m.status
 			}
+			m.sizeMeta()
+			m.refreshMeta()
+			return m, tea.Batch(steamTimer, m.setStatus(note))
 		}
 		m.sizeMeta()
 		m.refreshMeta()
-		return m, nil
+		return m, m.setStatus(note)
 
 	case launchDoneMsg:
+		var note string
 		if msg.err != nil {
-			m.status = i18n.T("status.launch_fail", msg.err)
+			note = i18n.T("status.launch_fail", msg.err)
 		} else {
 			if m.play != nil {
 				m.play.Add(msg.gameID, msg.dur)
 				if err := m.play.Save(); err != nil {
-					m.status = i18n.T("status.save_fail", err)
 					m.refreshMeta()
-					return m, nil
+					return m, m.setStatus(i18n.T("status.save_fail", err))
 				}
 			}
-			m.status = i18n.T("status.played", i18n.Duration(msg.dur))
+			note = i18n.T("status.played", i18n.Duration(msg.dur))
 		}
 		// A background run finished: mark it, seal the log tail with
 		// an exit line, stop the line waiter. Playtime above is kept.
@@ -99,7 +100,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.refreshMeta()
-		return m, nil
+		return m, m.setStatus(note)
 
 	case runLogMsg:
 		m.appendRunLine(msg.line)
@@ -111,11 +112,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case iconsProgMsg:
 		m.iconsDone = msg.done
 		m.iconsTotal = msg.total
-		m.status = i18n.T("status.icons.fetching", msg.done, msg.total)
+		progTimer := m.setStatus(i18n.T("status.icons.fetching", msg.done, msg.total))
 		if m.iconsCh != nil {
-			return m, waitIconsProgress(m.iconsCh)
+			return m, tea.Batch(waitIconsProgress(m.iconsCh), progTimer)
 		}
-		return m, nil
+		return m, progTimer
 
 	case iconsDoneMsg:
 		m.iconsActive = false
@@ -124,21 +125,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.iconsFail = msg.failed
 		m.refreshIconsStat()
 		if msg.errMsg != "" {
-			m.status = i18n.T("status.steam.fail", msg.errMsg)
-			return m, nil
+			return m, m.setStatus(i18n.T("status.steam.fail", msg.errMsg))
 		}
-		m.status = i18n.T("status.icons.synced",
+		note := i18n.T("status.icons.synced",
 			msg.fetched, msg.heroFetched, msg.logoFetched, msg.failed, msg.applied, msg.heroes, msg.logos, msg.profiles)
 		if msg.runningNote {
-			m.status += " • " + i18n.T("status.steam.running")
+			note += " • " + i18n.T("status.steam.running")
 		}
-		return m, nil
+		return m, m.setStatus(note)
 
 	case artOpenedMsg:
+		var note string
 		if msg.err != nil {
-			m.status = i18n.T("status.art.fail", msg.err)
+			note = i18n.T("status.art.fail", msg.err)
 		} else {
-			m.status = i18n.T("status.art.opened", msg.label)
+			note = i18n.T("status.art.opened", msg.label)
+		}
+		return m, m.setStatus(note)
+
+	case clearStatusMsg:
+		if msg.token == m.statusToken {
+			m.clearStatus()
 		}
 		return m, nil
 
@@ -159,13 +166,11 @@ func (m Model) launchSelected() (tea.Model, tea.Cmd) {
 	game := *g
 	r := m.gameRecipe(game)
 	if r == nil {
-		m.status = i18n.T("status.no_recipe", game.Title)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.no_recipe", game.Title))
 	}
 	cmd, err := m.launchCmd(game, r)
 	if err != nil {
-		m.status = i18n.T("status.launch_fail", err)
-		return m, nil
+		return m, m.setStatus(i18n.T("status.launch_fail", err))
 	}
 	return m.startRun(game, cmd)
 }
@@ -246,11 +251,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, k.Launch):
 		return m.launchSelected()
 	case key.Matches(msg, k.Favorite):
-		m.toggleFavorite()
-		return m, nil
+		return m, m.toggleFavorite()
 	case key.Matches(msg, k.Steam):
-		m.addCurrentToSteam()
-		return m, nil
+		return m, m.addCurrentToSteam()
 	case key.Matches(msg, k.Search):
 		// Prefill with the committed filter so it can be refined.
 		m.searching = true
@@ -374,8 +377,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, k.Bottom):
 			m.selectGame(max(len(m.filtered)-1, 0))
 		case key.Matches(msg, k.Rescan):
-			m.status = i18n.T("status.scanning", m.romDir)
-			return m, m.rescanCmd()
+			return m, tea.Batch(m.rescanCmd(), m.setStatus(i18n.T("status.scanning", m.romDir)))
 		case key.Matches(msg, k.Select):
 			m.setFocus(PaneMeta)
 		}
@@ -396,26 +398,23 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, k.Copy):
 			return m.metaCopy()
 		case key.Matches(msg, k.Deploy):
-			m.toggleSoftpatch()
-			return m, nil
+			return m, m.toggleSoftpatch()
 		case key.Matches(msg, k.Select):
 			return m.metaSelect()
 		case key.Matches(msg, k.Rescan):
-			m.status = i18n.T("status.scanning", m.romDir)
-			return m, m.rescanCmd()
+			return m, tea.Batch(m.rescanCmd(), m.setStatus(i18n.T("status.scanning", m.romDir)))
 		}
 		switch msg.String() {
 		case "n":
-			m.cycleAlt(true)
+			return m, m.cycleAlt(true)
 		case "p":
-			m.cycleAlt(false)
+			return m, m.cycleAlt(false)
 		}
 	}
 
 	// Rescan is global: allow it from the consoles pane too.
 	if key.Matches(msg, k.Rescan) {
-		m.status = i18n.T("status.scanning", m.romDir)
-		return m, m.rescanCmd()
+		return m, tea.Batch(m.rescanCmd(), m.setStatus(i18n.T("status.scanning", m.romDir)))
 	}
 	return m, nil
 }

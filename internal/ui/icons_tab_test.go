@@ -166,8 +166,10 @@ func TestIconsProgressMsgs(t *testing.T) {
 	if !strings.Contains(mm.status, "7/20") {
 		t.Fatalf("status must show progress, got %q", mm.status)
 	}
-	// Listener re-armed: feed it and finish.
-	go func() { mm.iconsCh <- iconsProgMsg{done: 20, total: 20} }()
+	// Listener re-armed: feed it and finish (channel captured locally:
+	// closing over mm races with the reassignment below).
+	ch := mm.iconsCh
+	go func() { ch <- iconsProgMsg{done: 20, total: 20} }()
 	_ = mm
 	out, _ = m.Update(iconsDoneMsg{fetched: 12, failed: 1, applied: 10, profiles: 2})
 	mm = out.(Model)

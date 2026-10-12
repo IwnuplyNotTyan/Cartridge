@@ -156,12 +156,9 @@ func TestMetaArtEnterMissingFile(t *testing.T) {
 			}
 		}
 	}
-	out, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = out.(Model)
-	if cmd != nil {
-		t.Fatalf("dead path must not spawn the opener")
-	}
-	if !strings.Contains(m.status, "gone") {
+	if m.status == "" || !strings.Contains(m.status, "gone") {
 		t.Fatalf("status = %q, want missing hint", m.status)
 	}
 }
