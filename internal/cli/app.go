@@ -252,7 +252,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		ui.WithPlaytime(a.play),
 		ui.WithOverrides(a.over),
 		ui.WithFavorites(a.fav))
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }

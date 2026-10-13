@@ -225,34 +225,10 @@ func (m Model) renderConsoles(w int) string {
 	// Display order: Home without a count, a --- rule, consoles with
 	// counts, another --- rule, the settings entry. Rules are display
 	// only; consCur == len(rows) addresses the settings entry.
-	type item struct {
-		sep  bool
-		hint bool // empty-library hint, display only
-		row  int  // index into m.rows, -1 for the settings entry
-	}
-	var items []item
-	if len(m.rows) > 0 {
-		items = append(items, item{row: 0})
-		items = append(items, item{sep: true})
-		for i := 1; i < len(m.rows); i++ {
-			items = append(items, item{row: i})
-		}
-		if len(m.rows) == 1 {
-			// No consoles at all: hint between the rules.
-			items = append(items, item{hint: true})
-		}
-		items = append(items, item{sep: true})
-	}
-	items = append(items, item{row: -1})
-	cur := 0
-	for i, it := range items {
-		if it.sep || it.hint {
-			continue
-		}
-		if (it.row == -1 && m.onSettingsRow()) || (it.row >= 0 && it.row == m.consCur) {
-			cur = i
-		}
-	}
+	// Items come from consoleItems() so the mouse handler maps the
+	// same rows (see mouse.go).
+	items := m.consoleItems()
+	cur := m.consoleCurPos(items)
 	visible := max(m.bodyH()-1, 1)
 	start := clamp(cur-visible/2, 0, max(len(items)-visible, 0))
 	for _, it := range items[start:min(start+visible, len(items))] {
@@ -308,10 +284,7 @@ func (m Model) renderGames(w int) string {
 		lines = append(lines, infoStyle.Render(fit(empty, w)))
 		return m.column(lines, w, 1, 1)
 	}
-	visible := max(m.bodyH()-1, 1)
-	pos := m.shelfPos()
-	start := clamp(pos-visible/2, 0, max(len(m.shelf)-visible, 0))
-	end := min(start+visible, len(m.shelf))
+	start, end := m.gamesWindow()
 	// The pane title sticks to the topmost visible section with a 2-row
 	// delay, so it does not flicker on every boundary; the search filter
 	// wins while querying. Flat category lists keep the plain title.

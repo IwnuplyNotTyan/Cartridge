@@ -144,6 +144,13 @@ type Model struct {
 	iconsHeroes    int
 	iconsLogos     int
 	iconsStatFresh bool
+
+	// Mouse state: last left-click target + time for double-click
+	// detection (single click selects, second click on the same row
+	// within the interval activates). Values are opaque ids built by
+	// the mouse handler (see mouse.go).
+	mouseLastID string
+	mouseLastAt time.Time
 }
 
 // launchDoneMsg reports an emulator run back to the model.

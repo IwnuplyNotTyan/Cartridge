@@ -114,7 +114,7 @@
     "status.run.busy": "уже запущено: %s",
     "run.running": "игра идёт",
     "run.exited": "завершено",
-    "run.hint": "esc назад • ↑/↓/pgup/pgdn листать",
+    "run.hint": "esc назад • ↑/↓/pgup/pgdn/колесо листать • клик выбор, дабл-клик запуск",
     "run.exitline": "— завершено за %s —",
     "status.save_fail": "не сохранилось: %v",
     "status.mod.deployed": "мод установлен как %s - RetroArch подхватит сам",

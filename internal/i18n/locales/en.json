@@ -114,7 +114,7 @@
     "status.run.busy": "already running: %s",
     "run.running": "running",
     "run.exited": "exited",
-    "run.hint": "esc back • ↑/↓/pgup/pgdn scroll",
+    "run.hint": "esc back • ↑/↓/pgup/pgdn/wheel scroll • click select, double-click launch",
     "run.exitline": "— exited after %s —",
     "status.save_fail": "save failed: %v",
     "status.mod.deployed": "mod deployed as %s - RetroArch autopatches it",
