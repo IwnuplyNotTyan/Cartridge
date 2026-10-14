@@ -188,7 +188,7 @@ func (m *Model) metaSelect() (tea.Model, tea.Cmd) {
 			m.artOpen = !m.artOpen
 			m.refreshMeta()
 			return *m, nil
-		case "art":
+		case "art", "poster":
 			return m.openArtSelected()
 		case "mod":
 			return m.launchModSelected()
@@ -433,6 +433,7 @@ func (m Model) buildMetaRows() []metaRow {
 	}
 	var rows []metaRow
 	rows = append(rows, metaRow{kind: "title", lines: wrapSoft(g.Title, w), copy: g.Title})
+	rows = append(rows, m.posterRows(*g, w)...)
 	rows = append(rows, metaRow{sep: true})
 	rows = append(rows, metaRow{kind: "id", label: i18n.T("meta.id"), lines: []string{g.ShortID()}, copy: g.ID})
 	rows = append(rows, metaRow{kind: "hash", lines: wrapSoft(g.ID, max(w-4, 10)), copy: g.ID})
@@ -600,6 +601,24 @@ func (m Model) renderMetaRows() (string, []int) {
 		if r.sep {
 			b.WriteString("\n")
 			n++
+			continue
+		}
+		// Poster preview: raw half-block lines (ANSI truecolor) need
+		// no wrapping or truncation — truncate() would cut escape
+		// sequences. Selection shows only the left accent bar so the
+		// image colors stay intact (no selStyle background over art).
+		if r.kind == "poster" {
+			if i == m.metaCur && m.focus == PaneMeta {
+				for _, ln := range r.lines {
+					b.WriteString(curStyle.Render("│ ") + ln + "\n")
+					n++
+				}
+			} else {
+				for _, ln := range r.lines {
+					b.WriteString("  " + ln + "\n")
+					n++
+				}
+			}
 			continue
 		}
 		if i == m.metaCur && m.focus == PaneMeta {

@@ -91,7 +91,8 @@ type ConsoleRow struct {
 // summary row, "mod" on one expanded mod file (enter plays it via a
 // hard-patched instance, d toggles the softpatch copy), "arts" on the
 // artwork summary row, "art" on one expanded cached file (enter opens
-// it with the desktop default app), "sep" on separators.
+// it with the desktop default app), "poster" on the half-block artwork
+// preview under the title (enter opens it like "art"), "sep" on separators.
 type metaRow struct {
 	kind  string
 	label string

@@ -99,13 +99,14 @@ func (m Model) artRows(g rom.Game, vw int) []metaRow {
 
 // openArtSelected hands the cursor artwork file to the desktop opener.
 // A file gone since the rows were built (cache pruned under us) reports
-// a miss instead of spawning the opener on a dead path.
+// a miss instead of spawning the opener on a dead path. Accepts both
+// "art" file rows and the "poster" preview row (same file, same action).
 func (m Model) openArtSelected() (tea.Model, tea.Cmd) {
 	if m.metaCur < 0 || m.metaCur >= len(m.metaRows) {
 		return m, nil
 	}
 	row := m.metaRows[m.metaCur]
-	if row.kind != "art" || strings.TrimSpace(row.copy) == "" {
+	if (row.kind != "art" && row.kind != "poster") || strings.TrimSpace(row.copy) == "" {
 		return m, nil
 	}
 	if st, err := os.Stat(row.copy); err != nil || st.IsDir() {
