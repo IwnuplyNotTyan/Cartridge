@@ -21,7 +21,7 @@
 
         # Fill after `go.mod` changes:
         #   nix build 2>&1 | grep 'got:'
-        vendorHash = "sha256-EOBH7kzJLPMMdYErNgQRI46sfEs1GFRvTdUbKe5scXQ=";
+        vendorHash = "sha256-OW70+rnP6xP0nlQ/q73IcPlYFgJ/Mc32k9qKow4Dk5w=";
 
         ldflags = [
           "-s"
