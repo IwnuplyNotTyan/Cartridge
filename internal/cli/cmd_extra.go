@@ -238,7 +238,7 @@ recipes/patches load, emulator binaries and cheat/mod dirs.`,
 			check("recipes", fmt.Sprintf("%s (%d)", a.cfg.Recipes, len(a.recipes)), len(a.recipes) > 0 || a.cfg.Recipes == "")
 			check("patches", fmt.Sprintf("%s (%d)", a.cfg.Patches, len(a.patches)), true)
 			for _, d := range []struct{ name, path string }{
-				{"mods", a.cfg.ModsDir}, {"saves", a.cfg.SavesDir}, {"cheats", a.cfg.CheatsDir}, {"patched", a.cfg.Patched},
+				{"mods", a.cfg.ModsDir}, {"cheats", a.cfg.CheatsDir}, {"patched", a.cfg.Patched},
 			} {
 				if err := os.MkdirAll(d.path, 0o755); err != nil {
 					check(d.name, d.path+" ("+err.Error()+")", false)

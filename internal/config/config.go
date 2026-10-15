@@ -24,7 +24,6 @@ const (
 	EnvPatches = "CARTRIDGE_PATCHES"
 	EnvMods    = "CARTRIDGE_MODS_DIR"
 	EnvPatched = "CARTRIDGE_PATCHED_DIR"
-	EnvSaves   = "CARTRIDGE_SAVES_DIR"
 	EnvCheats  = "CARTRIDGE_CHEATS_DIR"
 	// Steam integration overrides.
 	EnvSteamAutoAdd  = "CARTRIDGE_STEAM_AUTO_ADD"
@@ -117,7 +116,6 @@ type File struct {
 	Patches   string       `json:"patches,omitempty"`
 	ModsDir   string       `json:"mods_dir,omitempty"`
 	Patched   string       `json:"patched_dir,omitempty"`
-	SavesDir  string       `json:"saves_dir,omitempty"`
 	CheatsDir string       `json:"cheats_dir,omitempty"`
 	Steam     *SteamConfig `json:"steam,omitempty"`
 }
@@ -132,7 +130,6 @@ type Config struct {
 	Patches    string
 	ModsDir    string
 	Patched    string
-	SavesDir   string
 	CheatsDir  string
 	Steam      SteamConfig
 	ConfigFile string // file actually read ("" when none)
@@ -179,18 +176,6 @@ func DefaultModsDir() string {
 // instances (one file per game+mod, outside the games dir so rescans
 // never pick them up as library games).
 func DefaultPatchedDir() string { return mods.DefaultPatchedDir() }
-
-// DefaultSavesDir returns the standard directory for saves/states.
-func DefaultSavesDir() string {
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "cartridge", "saves")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "saves"
-	}
-	return filepath.Join(home, ".local", "share", "cartridge", "saves")
-}
 
 // DefaultCheatsDir returns the standard directory for cheat files.
 func DefaultCheatsDir() string {
@@ -326,7 +311,6 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		Patches:    expandPath(firstNonEmpty(os.Getenv(EnvPatches), f.Patches, DefaultPatchesPath())),
 		ModsDir:    expandPath(firstNonEmpty(os.Getenv(EnvMods), f.ModsDir, DefaultModsDir())),
 		Patched:    expandPath(firstNonEmpty(os.Getenv(EnvPatched), f.Patched, DefaultPatchedDir())),
-		SavesDir:   expandPath(firstNonEmpty(os.Getenv(EnvSaves), f.SavesDir, DefaultSavesDir())),
 		CheatsDir:  expandPath(firstNonEmpty(os.Getenv(EnvCheats), f.CheatsDir, DefaultCheatsDir())),
 		Steam:      steam,
 		ConfigFile: used,
@@ -388,7 +372,6 @@ func (c Config) ToFile() File {
 		Patches:   c.Patches,
 		ModsDir:   c.ModsDir,
 		Patched:   c.Patched,
-		SavesDir:  c.SavesDir,
 		CheatsDir: c.CheatsDir,
 		Steam:     &steam,
 	}

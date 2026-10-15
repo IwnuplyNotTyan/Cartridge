@@ -23,7 +23,7 @@ func settingsModel(t *testing.T) Model {
 		WithRecipes(eff),
 		WithBaseRecipes(base),
 		WithPatches(patches),
-		WithPaths(filepath.Join(t.TempDir(), "config.json"), "/r/recipes.json", "/r/patches.json", "/m", "/s", "/c"),
+		WithPaths(filepath.Join(t.TempDir(), "config.json"), "/r/recipes.json", "/r/patches.json", "/m", "/c"),
 		WithLangRaw("auto"),
 	)
 	return sizedModel(t, m)
@@ -137,7 +137,7 @@ func moveTestModel(t *testing.T) (Model, string) {
 		WithRecipes(emulate.ApplyPatches(loaded, patches)),
 		WithBaseRecipes(loaded),
 		WithPatches(patches),
-		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s", "/c"),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/c"),
 		WithLangRaw("auto"),
 	)
 	m = sizedModel(t, m)
@@ -367,7 +367,7 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 		WithRecipes(emulate.ApplyPatches(loaded, patches)),
 		WithBaseRecipes(loaded),
 		WithPatches(patches),
-		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/s", "/c"),
+		WithPaths(filepath.Join(dir, "config.json"), recipesPath, filepath.Join(dir, "patches.json"), "/m", "/c"),
 		WithLangRaw("auto"),
 	)
 	m = sizedModel(t, m)
@@ -596,7 +596,6 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 		"sett.paths.patches": "Patches",
 		"sett.paths.mods":    "Mods",
 		"sett.paths.patched": "Patched",
-		"sett.paths.saves":   "Saves",
 		"sett.paths.cheats":  "Cheats",
 	} {
 		if got := i18n.T(key); got != want {
@@ -606,13 +605,16 @@ func TestSettingsPathLabelsTitleCase(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
 	m.settTab = TabPaths
 	view := m.View()
-	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Patched:", "Saves:", "Cheats:"} {
+	for _, want := range []string{"Games:", "Library:", "Recipes:", "Patches:", "Mods:", "Patched:", "Cheats:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("paths tab must show label %q\n%s", want, view)
 		}
 	}
+	if strings.Contains(view, "Saves:") || strings.Contains(view, "Сейвы:") {
+		t.Fatalf("paths tab must not show saves\n%s", view)
+	}
 	// Values keep their own case: the label is title-cased, not the path.
-	if strings.Contains(view, "SAVES:") {
+	if strings.Contains(view, "CHEATS:") {
 		t.Fatalf("labels must not be all caps\n%s", view)
 	}
 }

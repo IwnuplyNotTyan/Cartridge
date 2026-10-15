@@ -40,10 +40,9 @@ func newConfigCmd() *cobra.Command {
 				cprintf(cmd, "  %s\n", kv("language", fmt.Sprintf("%s (%s)", i18n.Name(c.Lang), string(c.Lang))))
 				cprintf(cmd, "  %s\n", kv("recipes", c.Recipes))
 				cprintf(cmd, "  %s\n", kv("patches", c.Patches))
-				cprintf(cmd, "  %s\n", kv("mods", c.ModsDir))
-				cprintf(cmd, "  %s\n", kv("patched", c.Patched))
-				cprintf(cmd, "  %s\n", kv("saves", c.SavesDir))
-				cprintf(cmd, "  %s\n", kv("cheats", c.CheatsDir))
+			cprintf(cmd, "  %s\n", kv("mods", c.ModsDir))
+			cprintf(cmd, "  %s\n", kv("patched", c.Patched))
+			cprintf(cmd, "  %s\n", kv("cheats", c.CheatsDir))
 				cprintf(cmd, "  %s\n", kv("steam auto-add", onOff(c.Steam.AutoAdd)))
 				cprintf(cmd, "  %s\n", kv("steam prefix", q(c.Steam.EffectivePrefix())))
 				cprintf(cmd, "  %s\n", kv("steam all-games", onOff(c.Steam.AllGames)))
@@ -68,11 +67,11 @@ func newConfigCmd() *cobra.Command {
 					return err
 				}
 				c := a.cfg
-				for _, p := range [][2]string{
-					{"ROM", c.RomDir}, {"library", c.Library}, {"recipes", c.Recipes},
-					{"patches", c.Patches}, {"mods", c.ModsDir}, {"patched", c.Patched},
-					{"saves", c.SavesDir}, {"cheats", c.CheatsDir},
-				} {
+			for _, p := range [][2]string{
+				{"ROM", c.RomDir}, {"library", c.Library}, {"recipes", c.Recipes},
+				{"patches", c.Patches}, {"mods", c.ModsDir}, {"patched", c.Patched},
+				{"cheats", c.CheatsDir},
+			} {
 					cprintf(cmd, "%-8s %s\n", p[0], p[1])
 				}
 				return nil

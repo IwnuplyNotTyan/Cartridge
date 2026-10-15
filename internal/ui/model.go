@@ -120,7 +120,6 @@ type Model struct {
 	patchesPath string
 	modsDir     string
 	patchedDir  string
-	savesDir    string
 	cheatsDir   string
 	langRaw     string
 	// showArt toggles the poster preview (ascii/half-block art) in the
@@ -197,13 +196,12 @@ func WithPatches(p []emulate.RecipePatch) Option {
 }
 
 // WithPaths sets config file location, recipes/patches paths and data dirs.
-func WithPaths(cfgFile, recipesPath, patchesPath, modsDir, savesDir, cheatsDir string) Option {
+func WithPaths(cfgFile, recipesPath, patchesPath, modsDir, cheatsDir string) Option {
 	return func(m *Model) {
 		m.cfgFile = cfgFile
 		m.recipesPath = recipesPath
 		m.patchesPath = patchesPath
 		m.modsDir = modsDir
-		m.savesDir = savesDir
 		m.cheatsDir = cheatsDir
 	}
 }

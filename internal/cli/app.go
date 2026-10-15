@@ -31,7 +31,6 @@ type GlobalOpts struct {
 	Recipes   string
 	Patches   string
 	ModsDir   string
-	SavesDir  string
 	CheatsDir string
 	Patched   string
 }
@@ -46,7 +45,6 @@ func AddGlobalFlags(root *cobra.Command) {
 	p.String("recipes", "", "recipes file or dir ($CARTRIDGE_RECIPES)")
 	p.String("patches", "", "recipe patches file or dir ($CARTRIDGE_PATCHES)")
 	p.String("mods-dir", "", "mods/patches directory ($CARTRIDGE_MODS_DIR)")
-	p.String("saves-dir", "", "saves/states directory ($CARTRIDGE_SAVES_DIR)")
 	p.String("cheats-dir", "", "cheat files directory ($CARTRIDGE_CHEATS_DIR)")
 	p.String("patched-dir", "", "hard-patched ROM instances dir ($CARTRIDGE_PATCHED_DIR)")
 }
@@ -87,7 +85,6 @@ func globalOptsFromCmd(cmd *cobra.Command) GlobalOpts {
 		Recipes:   get("recipes"),
 		Patches:   get("patches"),
 		ModsDir:   get("mods-dir"),
-		SavesDir:  get("saves-dir"),
 		CheatsDir: get("cheats-dir"),
 		Patched:   get("patched-dir"),
 	}
@@ -118,9 +115,6 @@ func resolveConfig(o GlobalOpts) (config.Config, error) {
 	}
 	if strings.TrimSpace(o.ModsDir) != "" {
 		cfg.ModsDir = config.ExpandPath(strings.TrimSpace(o.ModsDir))
-	}
-	if strings.TrimSpace(o.SavesDir) != "" {
-		cfg.SavesDir = config.ExpandPath(strings.TrimSpace(o.SavesDir))
 	}
 	if strings.TrimSpace(o.CheatsDir) != "" {
 		cfg.CheatsDir = config.ExpandPath(strings.TrimSpace(o.CheatsDir))
@@ -245,7 +239,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		ui.WithRecipes(a.recipes),
 		ui.WithBaseRecipes(a.base),
 		ui.WithPatches(a.patches),
-		ui.WithPaths(a.cfg.ConfigFile, a.cfg.Recipes, a.cfg.Patches, a.cfg.ModsDir, a.cfg.SavesDir, a.cfg.CheatsDir),
+		ui.WithPaths(a.cfg.ConfigFile, a.cfg.Recipes, a.cfg.Patches, a.cfg.ModsDir, a.cfg.CheatsDir),
 		ui.WithPatchedDir(a.cfg.Patched),
 		ui.WithLangRaw(a.rawLang),
 		ui.WithShowArt(a.cfg.ShowArt),
