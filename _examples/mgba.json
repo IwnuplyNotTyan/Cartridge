@@ -14,7 +14,7 @@
       ],
       "cheats": {
         "supported": true,
-        "path": "{emu_dir}/cheats/{title}.cht"
+        "path": "~/.config/mgba/cheats/{title}.cht"
       },
       "achievements": {
         "supported": false,
