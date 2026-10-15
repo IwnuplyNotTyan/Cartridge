@@ -1,0 +1,23 @@
+
+    {
+      "name": "Azahar",
+      "consoles": [
+        "3ds"
+      ],
+      "extensions": [
+        ".3ds",
+        ".cia"
+      ],
+      "emulator": "azahar",
+      "args": [
+        "{rom}"
+      ],
+      "cheats": {
+        "supported": false,
+        "path": "~/.local/share/azahar-emu/cheats/{title}.txt"
+      },
+      "mods": {
+        "supported": false
+      },
+      "note": "Cheats & mods require unique id and cheats system, but im lazy puppy :3"
+    }
