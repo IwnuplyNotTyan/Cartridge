@@ -45,7 +45,7 @@ func TestSettingsTabsOnTop(t *testing.T) {
 	view := m.View()
 	// The consoles column stays on the left; the settings panel with the
 	// tab strip swaps in for games+metadata on the right.
-	for _, want := range []string{"Consoles", "Language", "Recipes", "Paths", " | "} {
+	for _, want := range []string{"Consoles", "General", "Recipes", "Paths", " | "} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view must contain %q\n%s", want, view)
 		}
@@ -69,7 +69,7 @@ func TestSettingsKeepsBarAndHelp(t *testing.T) {
 	out, _ := m.Update(keyMsg("?"))
 	m = out.(Model)
 	view := m.View()
-	if !strings.Contains(view, "Language") || !strings.Contains(view, " | ") {
+	if !strings.Contains(view, "General") || !strings.Contains(view, " | ") {
 		t.Fatalf("tabs must stay visible with help\n%s", view)
 	}
 	if !strings.Contains(view, "cartridge") {
@@ -385,8 +385,8 @@ func TestSettingsDropPatchRefreshesMeta(t *testing.T) {
 
 func TestSettingsLanguageApplies(t *testing.T) {
 	m := openSettings(t, settingsModel(t))
-	m.settTab = TabLang
-	m.settCur = 2 // Русский
+	m.settTab = TabGeneral
+	m.settCur = 3 // row 0 is the art toggle: Auto(1) English(2) Русский(3)
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = out.(Model)
 	if i18n.Get() != i18n.Ru {
@@ -394,7 +394,7 @@ func TestSettingsLanguageApplies(t *testing.T) {
 	}
 	defer i18n.Set(i18n.En)
 	view := m.View()
-	if !strings.Contains(view, "Язык") {
+	if !strings.Contains(view, "Общие") {
 		t.Fatalf("tabs must be localized\n%s", view)
 	}
 	if m.status != "" {
@@ -417,27 +417,124 @@ func TestSettingsLanguageApplies(t *testing.T) {
 func TestSettingsLangSelectedStyle(t *testing.T) {
 	i18n.Set(i18n.En)
 	m := openSettings(t, settingsModel(t))
-	m.settTab = TabLang
+	m.settTab = TabGeneral
 	m.langRaw = "ru" // active language: Русский
-	m.settCur = 0    // cursor on Auto
-	lines := m.renderLangTab(40)
-	if len(lines) != 3 {
-		t.Fatalf("lang tab must list 3 options, got %d", len(lines))
+	m.settCur = 0    // cursor on the art toggle
+	lines := m.renderGeneralTab(40)
+	// Toggle + blank + Language strip + blank + 3 language options.
+	if len(lines) != 7 {
+		t.Fatalf("general tab must list toggle + strip + 3 options, got %d", len(lines))
 	}
 	// Selected language: bold white, no background.
-	if want := "  " + langActive.Render("Русский"); lines[2] != want {
-		t.Fatalf("active language row = %q, want %q", lines[2], want)
+	if want := "  " + langActive.Render("Русский"); lines[6] != want {
+		t.Fatalf("active language row = %q, want %q", lines[6], want)
 	}
-	if strings.Contains(lines[2], "48;") {
-		t.Fatalf("active language must have no background: %q", lines[2])
+	if strings.Contains(lines[6], "48;") {
+		t.Fatalf("active language must have no background: %q", lines[6])
 	}
 	// The rest: grey italic.
-	if want := "  " + langIdle.Render("English"); lines[1] != want {
-		t.Fatalf("idle language row = %q, want %q", lines[1], want)
+	if want := "  " + langIdle.Render("English"); lines[5] != want {
+		t.Fatalf("idle language row = %q, want %q", lines[5], want)
 	}
 	// Cursor row keeps the navigation highlight.
 	if !strings.Contains(lines[0], "> ") {
 		t.Fatalf("cursor row must keep the marker: %q", lines[0])
+	}
+}
+
+func TestGeneralToggleAndLangStrip(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabGeneral
+	m.settCur = 1 // cursor away from the toggle
+	lines := m.renderGeneralTab(40)
+	if len(lines) != 7 {
+		t.Fatalf("general tab must list toggle + strip + 3 options, got %d", len(lines))
+	}
+	// The Language divider strip sits under the art toggle,
+	// with breathing blank lines around it.
+	if !strings.Contains(lines[2], "Language") || !strings.Contains(lines[2], "─") {
+		t.Fatalf("third line must be the language strip, got %q", lines[2])
+	}
+	for _, i := range []int{1, 3} {
+		if lines[i] != "" {
+			t.Fatalf("line %d around the strip must be blank, got %q", i, lines[i])
+		}
+	}
+	// Enabled on/off word glows like hovered text on the word itself.
+	m.showArt = true
+	lines = m.renderGeneralTab(40)
+	if want := selStyle.Render(i18n.T("sett.steam.on")); !strings.Contains(lines[0], want) {
+		t.Fatalf("enabled art must highlight the on word, got %q", lines[0])
+	}
+	// Disabled state stays idle with no highlight background.
+	m.showArt = false
+	lines = m.renderGeneralTab(40)
+	if want := pathIdle.Render(i18n.T("sett.steam.off")); !strings.Contains(lines[0], want) {
+		t.Fatalf("disabled art must idle the off word, got %q", lines[0])
+	}
+	if strings.Contains(lines[0], "48;") {
+		t.Fatalf("disabled art must have no highlight background: %q", lines[0])
+	}
+}
+
+func TestGeneralArtToggle(t *testing.T) {
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabGeneral
+	m.settCur = 0 // art toggle above the languages
+	if !m.showArt {
+		t.Fatalf("art must default to on")
+	}
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if m.showArt {
+		t.Fatalf("enter must toggle art off")
+	}
+	if !strings.Contains(m.status, "saved") && !strings.Contains(m.status, "сохран") {
+		t.Fatalf("toggle must report save, got %q", m.status)
+	}
+	data, err := os.ReadFile(m.cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"show_art"`) {
+		t.Fatalf("config must persist show_art: %s", data)
+	}
+	// Space toggles back on.
+	out, _ = m.Update(keyMsg(" "))
+	m = out.(Model)
+	if !m.showArt {
+		t.Fatalf("space must toggle art back on")
+	}
+	// Language rows shift by one: Русский sits at row 3.
+	m.settCur = 3
+	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	defer i18n.Set(i18n.En)
+	if i18n.Get() != i18n.Ru {
+		t.Fatalf("row 3 must apply Russian")
+	}
+}
+
+func TestGeneralArtHidesPoster(t *testing.T) {
+	dir := t.TempDir()
+	writePosterPNG(t, dir, "aaa111", 60, 90)
+	m := posterTestModel(t, dir)
+	found := false
+	for _, r := range m.metaRows {
+		if !r.sep && r.kind == "poster" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("precondition: poster must show when art is on")
+	}
+	m.showArt = false
+	m.refreshMeta()
+	for _, r := range m.metaRows {
+		if !r.sep && r.kind == "poster" {
+			t.Fatalf("art off must hide the poster preview")
+		}
 	}
 }
 
@@ -471,7 +568,7 @@ func TestSettingsPathsEditSaves(t *testing.T) {
 }
 
 func TestSettingsNoHints(t *testing.T) {
-	for tab, name := range map[SettingsTab]string{TabLang: "lang", TabRecipes: "recipes", TabPaths: "paths"} {
+	for tab, name := range map[SettingsTab]string{TabGeneral: "general", TabRecipes: "recipes", TabPaths: "paths"} {
 		m := openSettings(t, settingsModel(t))
 		m.settTab = tab
 		view := m.View()

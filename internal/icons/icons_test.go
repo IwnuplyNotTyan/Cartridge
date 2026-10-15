@@ -326,7 +326,8 @@ func TestPruneKeepsOnlyWanted(t *testing.T) {
 	}
 }
 
-func TestDownloadStoresValidImage(t *testing.T) {	payload := append(append([]byte{}, png1x1...), make([]byte, 600)...)
+func TestDownloadStoresValidImage(t *testing.T) {
+	payload := append(append([]byte{}, png1x1...), make([]byte, 600)...)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(payload)

@@ -248,6 +248,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		ui.WithPaths(a.cfg.ConfigFile, a.cfg.Recipes, a.cfg.Patches, a.cfg.ModsDir, a.cfg.SavesDir, a.cfg.CheatsDir),
 		ui.WithPatchedDir(a.cfg.Patched),
 		ui.WithLangRaw(a.rawLang),
+		ui.WithShowArt(a.cfg.ShowArt),
 		ui.WithSteam(a.cfg.Steam),
 		ui.WithPlaytime(a.play),
 		ui.WithOverrides(a.over),

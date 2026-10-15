@@ -108,7 +108,8 @@ func TestToIconGamesCarriesNaming(t *testing.T) {
 	}
 }
 
-func TestProviderOffDisablesIcons(t *testing.T) {	dir := t.TempDir()
+func TestProviderOffDisablesIcons(t *testing.T) {
+	dir := t.TempDir()
 	cfg := config.DefaultSteamConfig()
 	cfg.IconsDir = dir
 	cfg.IconsProvider = "off"
@@ -285,9 +286,9 @@ func TestPruneGridArtCleansHeroes(t *testing.T) {
 	touch("123.png")
 	touch("123p.png")
 	touch("123_hero.png")
-	touch("999_hero.png")   // orphan hero: removed
-	touch("999p.png")       // orphan capsule: removed (suffix parse fix)
-	touch("real_game.png")  // foreign: kept
+	touch("999_hero.png")  // orphan hero: removed
+	touch("999p.png")      // orphan capsule: removed (suffix parse fix)
+	touch("real_game.png") // foreign: kept
 	if n := PruneGridArt(dir, map[uint32]bool{123: true}); n != 2 {
 		t.Fatalf("pruned = %d, want 2", n)
 	}

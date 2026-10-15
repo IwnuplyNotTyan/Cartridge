@@ -59,6 +59,40 @@ func idlePathRow(label, val string, w int) string {
 	return line
 }
 
+// toggleRow renders "  Label: value" fitted to w cells where value leads
+// with an on/off word: an enabled value carries the selection highlight
+// on the on/off word itself (like hovered text), a disabled one stays
+// grey + italic; anything after the word (e.g. " (prefix)") stays idle.
+// The cursor row keeps the full-row navigation highlight instead.
+func toggleRow(label, val string, on, cur bool, w int) string {
+	if cur {
+		return styledRow(fit("  "+truncate(label+": "+val, w-2), w))
+	}
+	prefix := "  " + label + ": "
+	valW := w - lipgloss.Width(prefix)
+	if valW < 1 {
+		valW = 1
+	}
+	val = truncate(val, valW)
+	head, tail := val, ""
+	if j := strings.Index(val, " "); j >= 0 {
+		head, tail = val[:j], val[j:]
+	}
+	if on {
+		head = selStyle.Render(head)
+	} else {
+		head = pathIdle.Render(head)
+	}
+	line := prefix + head
+	if tail != "" {
+		line += pathIdle.Render(tail)
+	}
+	if pad := w - lipgloss.Width(line); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	return line
+}
+
 // idleDetailRow renders "    Label: value" fitted to w cells where only the
 // value is grey + italic, the label stays plain. Used for recipe detail rows.
 func idleDetailRow(label, val string, w int) string {

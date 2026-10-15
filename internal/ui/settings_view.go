@@ -15,8 +15,8 @@ import (
 // Settings view: rows, key handling and tab rendering.
 func (m Model) settingsRows() int {
 	switch m.settTab {
-	case TabLang:
-		return len(langOptions())
+	case TabGeneral:
+		return generalRows()
 	case TabRecipes:
 		// Recipe rows plus the detail rows under the selected recipe.
 		return max(len(m.baseRecipes)+len(recipeFields()), 1)
@@ -231,7 +231,7 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeSettings()
 		return m, nil
 	case "1":
-		m.settTab = TabLang
+		m.settTab = TabGeneral
 		m.settCur = 0
 		m.settField = -1
 		return m, nil
@@ -272,7 +272,7 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// consoles list (closeSettings also leaves the settings row,
 		// so one press restores games+metadata). Other tabs flip to
 		// the previous one; Tab is untouched (next tab).
-		if m.settTab == TabLang {
+		if m.settTab == TabGeneral {
 			m.closeSettings()
 			return m, nil
 		}
@@ -334,13 +334,22 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.settTab {
-	case TabLang:
+	case TabGeneral:
 		if key.Matches(msg, k.Select) {
+			// Row 0 toggles the poster preview; rows below apply
+			// the language at once. The toggle never expands.
+			if m.settCur == 0 {
+				return m, m.toggleArt()
+			}
 			opts := langOptions()
-			if m.settCur < len(opts) {
-				return m, m.applyLanguage(opts[m.settCur][0])
+			if idx := m.settCur - 1; idx >= 0 && idx < len(opts) {
+				return m, m.applyLanguage(opts[idx][0])
 			}
 			return m, nil
+		}
+		// Space also toggles for discoverability.
+		if msg.String() == " " && m.settCur == 0 {
+			return m, m.toggleArt()
 		}
 	case TabRecipes:
 		if key.Matches(msg, k.Select) {
@@ -474,8 +483,8 @@ func (m Model) renderSettingsLines(w int) []string {
 	lines = append(lines, m.renderSettingsTabs(w))
 	lines = append(lines, "")
 	switch m.settTab {
-	case TabLang:
-		lines = append(lines, m.renderLangTab(w)...)
+	case TabGeneral:
+		lines = append(lines, m.renderGeneralTab(w)...)
 	case TabRecipes:
 		lines = append(lines, m.renderRecipesTab(w)...)
 	case TabSteam:
@@ -491,14 +500,23 @@ func (m Model) renderSettingsLines(w int) []string {
 	return lines[:m.bodyH()]
 }
 
-func (m Model) renderLangTab(w int) []string {
+// renderGeneralTab builds the General tab: the art toggle on top, then
+// the Language choices below it under a divider strip with breathing
+// blank lines around it. Row 0 is the toggle, rows 1+ are the languages.
+func (m Model) renderGeneralTab(w int) []string {
 	var lines []string
+	// Row 0: poster preview toggle (ascii/half-block or not rendered).
+	// An enabled value glows like hovered text on the on/off word itself.
+	lines = append(lines, toggleRow(labelOf(m.artLabel()), valueOf(m.artLabel()), m.showArt, m.settCur == 0, w))
+	lines = append(lines, "")
+	lines = append(lines, sectionStrip(i18n.T("sett.general.language"), w))
+	lines = append(lines, "")
 	cur := m.langCur()
 	for i, opt := range langOptions() {
 		label := opt[1]
 		var plain string
 		switch i {
-		case m.settCur:
+		case m.settCur - 1:
 			plain = styledRow(fit("  "+truncate(label, w-2), w))
 		case cur:
 			// The active language: bold white, no background.

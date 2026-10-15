@@ -34,6 +34,8 @@ const (
 	EnvSteamGridKey  = "CARTRIDGE_STEAMGRIDDB_KEY"
 	EnvIconsProvider = "CARTRIDGE_ICONS_PROVIDER"
 	EnvIconsDir      = "CARTRIDGE_ICONS_DIR"
+	// Poster preview overrides.
+	EnvShowArt = "CARTRIDGE_SHOW_ART"
 )
 
 // SteamConfig controls the Steam non-Steam shortcuts integration.
@@ -68,10 +70,7 @@ type SteamConfig struct {
 // Zero value (field absent) means enabled — lookups are cheap local
 // stats, the network fetch only runs on explicit `steam icons sync`.
 func (s SteamConfig) IconsOn() bool {
-	if s.IconsProvider == "off" {
-		return false
-	}
-	return true
+	return s.IconsProvider != "off"
 }
 
 // EffectiveIconsProvider normalizes the provider name (default auto).
@@ -113,6 +112,7 @@ type File struct {
 	RomDir    string       `json:"rom_dir"`
 	Library   string       `json:"library"`
 	Lang      string       `json:"lang"`
+	ShowArt   *bool        `json:"show_art,omitempty"`
 	Recipes   string       `json:"recipes"`
 	Patches   string       `json:"patches,omitempty"`
 	ModsDir   string       `json:"mods_dir,omitempty"`
@@ -127,6 +127,7 @@ type Config struct {
 	RomDir     string
 	Library    string
 	Lang       i18n.Lang
+	ShowArt    bool
 	Recipes    string
 	Patches    string
 	ModsDir    string
@@ -264,6 +265,20 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		lang = i18n.Detect()
 	}
 
+	// Poster preview (ascii/half-block art in the metadata pane).
+	// Default is on; the config file wins, env overrides it.
+	// CARTRIDGE_NO_POSTER is the legacy hard-off switch.
+	showArt := true
+	if f.ShowArt != nil {
+		showArt = *f.ShowArt
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvShowArt)); v != "" {
+		showArt = parseBoolEnv(v, showArt)
+	}
+	if strings.TrimSpace(os.Getenv("CARTRIDGE_NO_POSTER")) != "" {
+		showArt = false
+	}
+
 	steam := DefaultSteamConfig()
 	if f.Steam != nil {
 		steam = *f.Steam
@@ -306,6 +321,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		RomDir:     expandPath(firstNonEmpty(dirFlag, os.Getenv(EnvDir), f.RomDir, defaultRomDir())),
 		Library:    expandPath(firstNonEmpty(libFlag, os.Getenv(EnvLibrary), f.Library, library.DefaultPath())),
 		Lang:       lang,
+		ShowArt:    showArt,
 		Recipes:    expandPath(firstNonEmpty(recipesFlag, os.Getenv(EnvRecipes), f.Recipes, DefaultRecipesPath())),
 		Patches:    expandPath(firstNonEmpty(os.Getenv(EnvPatches), f.Patches, DefaultPatchesPath())),
 		ModsDir:    expandPath(firstNonEmpty(os.Getenv(EnvMods), f.ModsDir, DefaultModsDir())),
@@ -362,10 +378,12 @@ func (c Config) ToFile() File {
 		lang = string(c.Lang)
 	}
 	steam := c.Steam
+	showArt := c.ShowArt
 	return File{
 		RomDir:    c.RomDir,
 		Library:   c.Library,
 		Lang:      lang,
+		ShowArt:   &showArt,
 		Recipes:   c.Recipes,
 		Patches:   c.Patches,
 		ModsDir:   c.ModsDir,

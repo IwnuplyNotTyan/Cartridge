@@ -19,6 +19,8 @@ func cleanEnv(t *testing.T, home string) {
 	t.Setenv(EnvConfig, "")
 	t.Setenv(EnvRecipes, "")
 	t.Setenv(EnvCheats, "")
+	t.Setenv(EnvShowArt, "")
+	t.Setenv("CARTRIDGE_NO_POSTER", "")
 	t.Setenv("LANG", "en_US.UTF-8")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LANGUAGE", "")
@@ -178,6 +180,58 @@ func TestResolveCheatsDir(t *testing.T) {
 	}
 	if f := c.ToFile(); f.CheatsDir != "/file/cheats" {
 		t.Fatalf("ToFile cheats = %q", f.CheatsDir)
+	}
+}
+
+func TestResolveShowArt(t *testing.T) {
+	home := t.TempDir()
+	cleanEnv(t, home)
+	c, err := Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !c.ShowArt {
+		t.Fatalf("ShowArt must default to true")
+	}
+	// File value applies.
+	cfgDir := home + "/.config/cartridge"
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgDir+"/config.json", []byte(`{"show_art": false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.ShowArt {
+		t.Fatalf("file show_art=false must apply: %+v", c)
+	}
+	// Env beats file.
+	t.Setenv(EnvShowArt, "1")
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !c.ShowArt {
+		t.Fatalf("env show_art=1 must win: %+v", c)
+	}
+	// Legacy hard-off switch.
+	t.Setenv("CARTRIDGE_NO_POSTER", "1")
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.ShowArt {
+		t.Fatalf("CARTRIDGE_NO_POSTER must force art off: %+v", c)
+	}
+	// ToFile round-trips the toggle.
+	t.Setenv("CARTRIDGE_NO_POSTER", "")
+	t.Setenv(EnvShowArt, "")
+	c.ShowArt = false
+	if f := c.ToFile(); f.ShowArt == nil || *f.ShowArt {
+		t.Fatalf("ToFile must carry show_art=false: %+v", f.ShowArt)
 	}
 }
 

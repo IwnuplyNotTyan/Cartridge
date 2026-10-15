@@ -152,11 +152,17 @@ func (m Model) renderSteamTab(w int) []string {
 	var lines []string
 	n := steamRowsFor(m)
 	for i := 0; i < n; i++ {
+		// Divider strips breathe: a blank line before (content sits
+		// above) and after each one.
 		if i == steamRowConsoles && len(m.steamConsoleRows()) > 0 {
+			lines = append(lines, "")
 			lines = append(lines, sectionStrip(i18n.T("pane.consoles"), w))
+			lines = append(lines, "")
 		}
 		if m.steamSyncRow(i) {
+			lines = append(lines, "")
 			lines = append(lines, sectionStrip("", w))
+			lines = append(lines, "")
 		}
 		lines = append(lines, m.renderSteamRow(i, w))
 	}
@@ -216,6 +222,14 @@ func (m Model) renderSteamRow(i, w int) string {
 	plain := fit("  "+truncate(row, w-2), w)
 	if cur {
 		return styledRow(plain)
+	}
+	// On/off toggles: an enabled value carries the selection highlight
+	// on the on/off word itself (like hovered text).
+	if i == steamRowAuto {
+		return toggleRow(labelOf(row), valueOf(row), m.steam.AutoAdd, false, w)
+	}
+	if i == steamRowAll {
+		return toggleRow(labelOf(row), valueOf(row), m.steam.AllGames, false, w)
 	}
 	return idlePathRow(labelOf(row), valueOf(row), w)
 }

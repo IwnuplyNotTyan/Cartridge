@@ -131,7 +131,8 @@ func TestIconsKeyEditMasked(t *testing.T) {
 	}
 }
 
-func TestIconsPruneRemovesOrphans(t *testing.T) {	m := iconsModel(t)
+func TestIconsPruneRemovesOrphans(t *testing.T) {
+	m := iconsModel(t)
 	// Seed one orphaned file.
 	orphan := filepath.Join(m.steam.IconsDir, "aa", "aa", "deadbeef0001.png")
 	mk := func(p string) {

@@ -161,17 +161,18 @@ func (c *Cache) gridBestArt(ctx context.Context, client *http.Client, key string
 func (c *Cache) gridBestArtFrom(ctx context.Context, client *http.Client, key, base string, gameID int, kind ArtKind) (string, bool) {
 	endpoint := "grids"
 	query := "dimensions=600x900,460x215,920x430&types=static&limit=1"
-	if kind == ArtWide {
+	switch kind {
+	case ArtWide:
 		// Landscape only: the wide grid slot is 920x430 (460x215 also
 		// valid), a 600x900 portrait here would render cropped.
 		query = "dimensions=920x430,460x215&types=static&limit=1"
-	} else if kind == ArtHero {
+	case ArtHero:
 		endpoint = "heroes"
 		// Only these three are valid hero dimensions per the API
 		// (1920x620, 3840x1240, 1600x650): any other value 400s the
 		// whole request, so heroes came back empty for every game.
 		query = "dimensions=3840x1240,1920x620,1600x650&types=static&limit=1"
-	} else if kind == ArtLogo {
+	case ArtLogo:
 		endpoint = "logos"
 		query = "types=static&limit=1"
 	}

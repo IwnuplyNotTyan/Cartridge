@@ -17,14 +17,18 @@ import (
 type SettingsTab int
 
 const (
-	TabLang SettingsTab = iota
+	TabGeneral SettingsTab = iota
 	TabRecipes
 	TabPaths
 	TabSteam
 	TabIcons
 )
 
-// NumSettingsTabs is the tab count (Language | Recipes | Paths | Steam | Icons).
+// TabLang is the deprecated alias for the General tab (language used to
+// be a tab of its own; now it lives under General below the art toggle).
+const TabLang = TabGeneral
+
+// NumSettingsTabs is the tab count (General | Recipes | Paths | Steam | Icons).
 const NumSettingsTabs = 5
 
 // pathEntry binds a label key to a getter/setter over the model.
@@ -50,8 +54,8 @@ func pathEntries() []pathEntry {
 // tabTitle returns the localized title of tab t.
 func tabTitle(t SettingsTab) string {
 	switch t {
-	case TabLang:
-		return i18n.T("sett.tab.lang")
+	case TabGeneral:
+		return i18n.T("sett.tab.general")
 	case TabRecipes:
 		return i18n.T("sett.tab.recipes")
 	case TabSteam:
@@ -72,6 +76,25 @@ func langOptions() [][2]string {
 		opts = append(opts, [2]string{string(l), i18n.Name(l)})
 	}
 	return opts
+}
+
+// generalRows is the General tab row count: the art toggle on top,
+// then one row per language choice (Auto first).
+func generalRows() int {
+	return 1 + len(langOptions())
+}
+
+// artOnOff returns the localized on/off mark for the art toggle.
+func artOnOff(on bool) string {
+	if on {
+		return i18n.T("sett.steam.on")
+	}
+	return i18n.T("sett.steam.off")
+}
+
+// artLabel returns the General tab art toggle row text.
+func (m Model) artLabel() string {
+	return i18n.T("sett.general.art", artOnOff(m.showArt))
 }
 
 // langCur returns the cursor index matching the stored raw lang value.
@@ -140,10 +163,12 @@ func (m *Model) persistSettings() error {
 		lang = "auto"
 	}
 	steam := m.steam
+	showArt := m.showArt
 	f := config.File{
 		RomDir:    m.romDir,
 		Library:   m.libPath,
 		Lang:      lang,
+		ShowArt:   &showArt,
 		Recipes:   m.recipesPath,
 		Patches:   m.patchesPath,
 		ModsDir:   m.modsDir,
@@ -157,6 +182,18 @@ func (m *Model) persistSettings() error {
 	}
 	m.cfgFile = path
 	return nil
+}
+
+// toggleArt flips the poster preview (ascii/half-block art in the
+// metadata pane) and persists it. The preview rebuilds at once so the
+// change is visible without a rescan.
+func (m *Model) toggleArt() tea.Cmd {
+	m.showArt = !m.showArt
+	m.refreshMeta()
+	if err := m.persistSettings(); err != nil {
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
+	}
+	return m.setStatus(i18n.T("status.sett.saved"))
 }
 
 // toggleSteamAutoAdd flips auto-add and persists.

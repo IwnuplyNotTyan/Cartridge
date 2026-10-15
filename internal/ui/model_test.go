@@ -236,13 +236,13 @@ func TestConsolesSettingsRow(t *testing.T) {
 	m.settTab = TabRecipes
 	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = out.(Model)
-	if !m.settActive || m.settTab != TabLang {
+	if !m.settActive || m.settTab != TabGeneral {
 		t.Fatalf("left on recipes must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
 	}
 	m.settTab = TabRecipes
 	out, _ = m.Update(keyMsg("h"))
 	m = out.(Model)
-	if !m.settActive || m.settTab != TabLang {
+	if !m.settActive || m.settTab != TabGeneral {
 		t.Fatalf("h on recipes must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
 	}
 	// First tab: h/Left step back to the settings row (hover).
@@ -266,7 +266,7 @@ func TestConsolesSettingsRow(t *testing.T) {
 	m.settTab = TabRecipes
 	out, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = out.(Model)
-	if !m.settActive || m.settTab != TabLang {
+	if !m.settActive || m.settTab != TabGeneral {
 		t.Fatalf("shift+tab must go to previous tab, active=%v tab=%d", m.settActive, m.settTab)
 	}
 }

@@ -123,7 +123,10 @@ type Model struct {
 	savesDir    string
 	cheatsDir   string
 	langRaw     string
-	steam       config.SteamConfig
+	// showArt toggles the poster preview (ascii/half-block art) in the
+	// metadata pane. True by default; flipped from the General tab.
+	showArt bool
+	steam   config.SteamConfig
 
 	baseRecipes []emulate.Recipe
 	patches     []emulate.RecipePatch
@@ -215,6 +218,11 @@ func WithLangRaw(raw string) Option {
 	return func(m *Model) { m.langRaw = raw }
 }
 
+// WithShowArt sets the poster preview toggle (ascii/half-block art).
+func WithShowArt(v bool) Option {
+	return func(m *Model) { m.showArt = v }
+}
+
 // WithSteam sets the Steam integration settings (auto-add, categories).
 func WithSteam(s config.SteamConfig) Option {
 	return func(m *Model) { m.steam = s }
@@ -228,6 +236,7 @@ func New(games []rom.Game, romDir, libPath string, opts ...Option) Model {
 		meta:    viewport.New(0, 0),
 		keys:    newKeyMap(),
 		help:    help.New(),
+		showArt: true,
 	}
 	m.help.ShowAll = true
 	// NB: help comes from bubbles v2, so its styles use charm.land/lipgloss/v2

@@ -168,11 +168,12 @@ func shardPathFor(gameID string, kind ArtKind) string {
 		id = hex.EncodeToString(sum[:])
 	}
 	name := id + ".png"
-	if kind == ArtHero {
+	switch kind {
+	case ArtHero:
 		name = id + heroSuffix + ".png"
-	} else if kind == ArtLogo {
+	case ArtLogo:
 		name = id + logoSuffix + ".png"
-	} else if kind == ArtWide {
+	case ArtWide:
 		name = id + wideSuffix + ".png"
 	}
 	return filepath.Join(id[:2], id[2:4], name)
@@ -341,11 +342,12 @@ func (c *Cache) FailedRecently(gameID string, kind ArtKind, now time.Time) bool 
 		return false
 	}
 	at, n := e.FailedAt, e.FailCount
-	if kind == ArtHero {
+	switch kind {
+	case ArtHero:
 		at, n = e.HeroFailedAt, e.HeroFailCount
-	} else if kind == ArtLogo {
+	case ArtLogo:
 		at, n = e.LogoFailedAt, e.LogoFailCount
-	} else if kind == ArtWide {
+	case ArtWide:
 		at, n = e.WideFailedAt, e.WideFailCount
 	}
 	if n == 0 || at == 0 {
@@ -821,19 +823,20 @@ func (c *Cache) storeResponse(g Game, provider, url string, kind ArtKind, resp *
 	now := time.Now().Unix()
 	c.mu.Lock()
 	e := c.entries[g.ID]
-	if kind == ArtHero {
+	switch kind {
+	case ArtHero:
 		e.HeroFile, e.HeroURL, e.HeroProvider = rel, url, provider
 		e.HeroFetchedAt, e.HeroBytes = now, int64(len(data))
 		e.HeroFailCount, e.HeroFailedAt = 0, 0
-	} else if kind == ArtWide {
+	case ArtWide:
 		e.WideFile, e.WideURL, e.WideProvider = rel, url, provider
 		e.WideFetchedAt, e.WideBytes = now, int64(len(data))
 		e.WideFailCount, e.WideFailedAt = 0, 0
-	} else if kind == ArtLogo {
+	case ArtLogo:
 		e.LogoFile, e.LogoURL, e.LogoProvider = rel, url, provider
 		e.LogoFetchedAt, e.LogoBytes = now, int64(len(data))
 		e.LogoFailCount, e.LogoFailedAt = 0, 0
-	} else {
+	default:
 		e.File, e.URL, e.Provider = rel, url, provider
 		e.FetchedAt, e.Bytes = now, int64(len(data))
 		e.FailCount, e.FailedAt = 0, 0
@@ -849,25 +852,26 @@ func (c *Cache) markFailed(gameID string, kind ArtKind) {
 	defer c.mu.Unlock()
 	e := c.entries[gameID]
 	now := time.Now().Unix()
-	if kind == ArtHero {
+	switch kind {
+	case ArtHero:
 		e.HeroFailCount++
 		e.HeroFailedAt = now
 		if e.HeroBytes == 0 {
 			e.HeroFile = ""
 		}
-	} else if kind == ArtWide {
+	case ArtWide:
 		e.WideFailCount++
 		e.WideFailedAt = now
 		if e.WideBytes == 0 {
 			e.WideFile = ""
 		}
-	} else if kind == ArtLogo {
+	case ArtLogo:
 		e.LogoFailCount++
 		e.LogoFailedAt = now
 		if e.LogoBytes == 0 {
 			e.LogoFile = ""
 		}
-	} else {
+	default:
 		e.FailCount++
 		e.FailedAt = now
 		// Drop stale success data: a game that 404s everywhere has no art.

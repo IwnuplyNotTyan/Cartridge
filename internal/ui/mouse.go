@@ -338,7 +338,7 @@ func (m Model) mouseLeftMeta(bodyY int) (tea.Model, tea.Cmd) {
 	}
 	rowIdx := -1
 	for i, s := range starts {
-		next := line + 1
+		var next int
 		if i+1 < len(starts) {
 			next = starts[i+1]
 		} else {
@@ -525,8 +525,8 @@ func (m Model) mouseLeftSettings(paneX, bodyY int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.settTab {
-	case TabLang:
-		return m.mouseSettingsSimple(bodyY-2, len(langOptions()))
+	case TabGeneral:
+		return m.mouseSettingsGeneral(bodyY - 2)
 	case TabPaths:
 		return m.mouseSettingsSimple(bodyY-2, len(pathEntries()))
 	case TabIcons:
@@ -535,6 +535,25 @@ func (m Model) mouseLeftSettings(paneX, bodyY int) (tea.Model, tea.Cmd) {
 		return m.mouseSettingsSteam(bodyY - 2)
 	default:
 		return m.mouseSettingsRecipes(bodyY - 2)
+	}
+}
+
+// mouseSettingsGeneral selects a General tab row: vis 0 is the art
+// toggle, vis 1-3 are the blank + Language strip + blank (focus only),
+// vis 4+ are the language rows (settCur = vis-3).
+// Double-click activates like Enter.
+func (m Model) mouseSettingsGeneral(vis int) (tea.Model, tea.Cmd) {
+	switch {
+	case vis == 0:
+		return m.mouseSettingsSimple(0, generalRows())
+	case vis >= 4:
+		return m.mouseSettingsSimple(vis-3, generalRows())
+	default:
+		if !m.settActive {
+			m.openSettings()
+		}
+		m.mouseLastID = ""
+		return m, nil
 	}
 }
 
@@ -576,31 +595,31 @@ func (m Model) mouseSettingsIcons(vis int) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) mouseSettingsSteam(vis int) (tea.Model, tea.Cmd) {
-	// Content lines interleave divider strips before the consoles
-	// section and before the sync row: walk logical rows and match.
+	// Content lines interleave divider blocks (blank + strip + blank)
+	// before the consoles section and before the sync row: walk logical
+	// rows and match. Strips and blanks only focus, rows activate.
+	focusOnly := func() (tea.Model, tea.Cmd) {
+		m.mouseLastID = ""
+		if !m.settActive {
+			m.openSettings()
+		}
+		return m, nil
+	}
 	n := steamRowsFor(m)
 	hasCons := len(m.steamConsoleRows()) > 0
 	pos := 0
 	for i := 0; i < n; i++ {
 		if i == steamRowConsoles && hasCons {
-			if vis == pos {
-				m.mouseLastID = ""
-				if !m.settActive {
-					m.openSettings()
-				}
-				return m, nil // strip: focus only
+			if vis == pos || vis == pos+1 || vis == pos+2 {
+				return focusOnly() // divider block: focus only
 			}
-			pos++
+			pos += 3
 		}
 		if m.steamSyncRow(i) {
-			if vis == pos {
-				m.mouseLastID = ""
-				if !m.settActive {
-					m.openSettings()
-				}
-				return m, nil
+			if vis == pos || vis == pos+1 || vis == pos+2 {
+				return focusOnly()
 			}
-			pos++
+			pos += 3
 		}
 		if vis == pos {
 			return m.mouseSettingsSimple(i, n)

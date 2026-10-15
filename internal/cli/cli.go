@@ -11,7 +11,7 @@ import (
 
 var (
 	// Version is the CLI version shown in --version and fang header.
-	// Override with: go build -ldflags "-X cartridge/internal/cli.Version=x.y.z"
+	// Override with: go build -ldflags "-X cartridge/internal/cli.Version=x.y.z".
 	Version = "dev"
 	// Commit is the short git sha shown next to the version.
 	Commit = "none"

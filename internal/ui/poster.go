@@ -81,6 +81,9 @@ func posterBestPath(m Model, g rom.Game) string {
 // renderer adds, like every other row). maxRows follows the viewport
 // height so the preview scales with the terminal, not just the width.
 func (m Model) posterRows(g rom.Game, w int) []metaRow {
+	if !m.showArt {
+		return nil
+	}
 	if strings.TrimSpace(os.Getenv("CARTRIDGE_NO_POSTER")) != "" {
 		return nil
 	}

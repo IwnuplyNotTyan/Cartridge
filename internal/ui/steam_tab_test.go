@@ -39,6 +39,58 @@ func TestSteamTabRowsAndToggle(t *testing.T) {
 	}
 }
 
+func TestSteamToggleHighlight(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabSteam
+	m.settCur = -1 // no cursor row: plain idle rendering
+	// Disabled toggles stay idle with no highlight background.
+	if row := m.renderSteamRow(steamRowAuto, 40); !strings.Contains(row, pathIdle.Render("off")) {
+		t.Fatalf("disabled auto-add must idle the off word, got %q", row)
+	} else if strings.Contains(row, "48;") {
+		t.Fatalf("disabled toggle must have no highlight background: %q", row)
+	}
+	// Enabled toggles glow like hovered text on the on/off word itself.
+	m.steam.AutoAdd = true
+	if row := m.renderSteamRow(steamRowAuto, 40); !strings.Contains(row, selStyle.Render("on")) {
+		t.Fatalf("enabled auto-add must highlight the on word, got %q", row)
+	}
+	m.steam.AllGames = true
+	row := m.renderSteamRow(steamRowAll, 40)
+	if !strings.Contains(row, selStyle.Render("on")) {
+		t.Fatalf("enabled all-games must highlight the on word, got %q", row)
+	}
+	// The "(prefix)" suffix stays out of the highlight.
+	if !strings.Contains(row, pathIdle.Render(" (Cartridge)")) {
+		t.Fatalf("prefix suffix must stay idle, got %q", row)
+	}
+}
+
+func TestSteamStripsSpaced(t *testing.T) {
+	i18n.Set(i18n.En)
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabSteam
+	lines := m.renderSteamTab(80)
+	// Every divider strip breathes: a blank line before and after it.
+	strips := 0
+	for i, ln := range lines {
+		if !strings.Contains(ln, "─") {
+			continue
+		}
+		strips++
+		if i == 0 || lines[i-1] != "" {
+			t.Fatalf("strip %d must have a blank line before, got %q", strips, lines[max(i-1, 0)])
+		}
+		if i+1 >= len(lines) || lines[i+1] != "" {
+			t.Fatalf("strip %d must have a blank line after", strips)
+		}
+	}
+	// Consoles strip + sync strip.
+	if strips != 2 {
+		t.Fatalf("steam tab must have 2 strips, got %d", strips)
+	}
+}
+
 func TestSteamTabCustomName(t *testing.T) {
 	i18n.Set(i18n.En)
 	m := openSettings(t, settingsModel(t))
