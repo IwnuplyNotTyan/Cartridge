@@ -29,6 +29,21 @@ For CLI usage, check `--help`
 
 ---
 
+# 📚 Emulator support
+
+|Emulator|Play|Mods|Cheats|
+|--------|----|----|------|
+|MGBA|✅|✅|✅|
+|RetroArch|✅|✅|✅|
+|Mesen|✅|✅|❔|
+|Azahar (Plus)| ✅ |❌ |❌|
+
+
+> [!TIP]
+> Want expand this table? Open issue/pull request
+
+---
+
 # 🪻 Install
 
 > [!IMPORTANT]
