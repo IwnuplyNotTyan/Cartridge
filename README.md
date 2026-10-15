@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://github.com/IwnuplyNotTyan/Cartridge/blob/main/.github/assets/screenshot.png?raw=true" alt="Screenshot">
+  <img src="https://github.com/IwnuplyNotTyan/Cartridge/blob/main/.github/assets/screenshot.webp?raw=true" alt="Screenshot">
 </p>
 
 ---
