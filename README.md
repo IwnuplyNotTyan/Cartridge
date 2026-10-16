@@ -56,6 +56,10 @@ For CLI usage, check `--help`
 nix run github:iwnuplynottyan/cartridge
 ```
 
+> [!IMPORTANT]
+> Using legacy nixpkgs for Intel Macs, because 26.11 dropped this arch [^2], may be unstable
+
+[^2]: Check nixpkgs [changelog](https://nixos.org/manual/nixpkgs/unstable/release-notes#x86_64-darwin-26.11) about intel macos support state
 
 ## ⛏️ Build from source
 ```sh

@@ -3,9 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs-darwinx86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
   };
 
-  outputs = { self, nixpkgs, ... }:
+  outputs = { self, nixpkgs, nixpkgs-darwinx86, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -13,6 +14,10 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      pkgsFor = system:
+        if system == "x86_64-darwin"
+        then nixpkgs-darwinx86.legacyPackages.${system}
+        else nixpkgs.legacyPackages.${system};
       version = "0.1.0";
       mkCartridge = pkgs: pkgs.buildGo127Module {
         pname = "cartridge";
@@ -37,14 +42,14 @@
     {
       packages = forAllSystems (system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = pkgsFor system;
         in
         {
           default = mkCartridge pkgs;
         });
       devShells = forAllSystems (system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = pkgsFor system;
         in
         {
           default = pkgs.mkShell {
