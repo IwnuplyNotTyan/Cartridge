@@ -77,7 +77,7 @@ go build -o ./bin/cartridge main.go
     - [Charmtone](github.com/charmbracelet/x/exp/charmtone) — Color Pallet 
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
 - [Log](https://github.com/charmbracelet/log) — Pretty logs
-- [Go Osc52](github.com/aymanbagabas/go-osc52/v2) — Copy text to clipboard
+- [Go Osc52](https://github.com/aymanbagabas/go-osc52/v2) — Copy text to clipboard
 - [Cobra](https://github.com/spf13/cobra) — CLI commands and flags
 - [Fang](https://github.com/charmbracelet/fang) — Pretty help, errors and version
 
