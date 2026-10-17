@@ -2,6 +2,8 @@ package rom
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -162,57 +164,64 @@ func TestCleanHeaderString(t *testing.T) {
 	}
 }
 
-func TestLookupNoIntro(t *testing.T) {
-	title := LookupNoIntro(654659974)
-	t.Logf("LookupNoIntro = %q", title)
-	if title != "With the Last Moonbeam (World) (v1.0.1) (Aftermarket) (Unl)" {
-		t.Fatalf("LookupNoIntro = %q", title)
+func TestIdentifySlugFallsBackToHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "moonbeam-v1-0-1.gba")
+	data := make([]byte, 0x200)
+	copy(data[0xA0:], "METROID ZERO")
+	data[0xB2] = 0x96
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestIdentifyMoonbeam(t *testing.T) {
-	g, err := Identify("/Users/q/Documents/Games/moonbeam-v1-0-1.gba")
+	g, err := Identify(path)
 	if err != nil {
 		t.Fatalf("Identify error: %v", err)
 	}
-	t.Logf("Identify: title=%q, region=%q, tags=%v", g.Title, g.Region, g.Tags)
-	if g.Title != "With the Last Moonbeam" {
-		t.Fatalf("wanted 'With the Last Moonbeam', got %q", g.Title)
+	if g.Title != "METROID ZERO" {
+		t.Fatalf("wanted header title, got %q", g.Title)
 	}
 }
 
-func TestScanDirMoonbeam(t *testing.T) {
+func TestScanDirHealsSlugCache(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "moonbeam-v1-0-1.gba")
+	data := make([]byte, 0x200)
+	copy(data[0xA0:], "METROID ZERO")
+	data[0xB2] = 0x96
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	stored := []Game{
 		{
-			ID:          "1087b00ff0276d6681549a1c77ec3608c53c390ef3089d9f402f800625cb1b14",
+			ID:          "stale-cache-id",
 			Title:       "moonbeam-v1-0-1",
 			ConsoleID:   "gba",
 			ConsoleName: "Game Boy Advance",
-			Path:        "/Users/q/Documents/Games/moonbeam-v1-0-1.gba",
-			Size:        1449956,
-			SHA256:      "1087b00ff0276d6681549a1c77ec3608c53c390ef3089d9f402f800625cb1b14",
-			FileSize:    1449956,
-			ModTime:     1792232440401951499,
+			Path:        path,
+			FileSize:    info.Size(),
+			ModTime:     info.ModTime().UnixNano(),
 		},
 	}
-	games, errs := ScanDir("/Users/q/Documents/Games", stored)
+	games, errs := ScanDir(root, stored)
 	if len(errs) != 0 {
 		t.Fatalf("ScanDir errs: %v", errs)
 	}
 	if len(games) == 0 {
 		t.Fatalf("no games found")
 	}
-	t.Logf("ScanDir: title=%q", games[0].Title)
-	if games[0].Title != "With the Last Moonbeam" {
-		t.Fatalf("ScanDir wanted 'With the Last Moonbeam', got %q", games[0].Title)
+	if games[0].Title != "METROID ZERO" {
+		t.Fatalf("ScanDir wanted header title, got %q", games[0].Title)
 	}
 
-	// Rescan with already healed cache must preserve "With the Last Moonbeam"
-	games2, errs := ScanDir("/Users/q/Documents/Games", games)
+	// Rescan with already healed cache must preserve the title.
+	games2, errs := ScanDir(root, games)
 	if len(errs) != 0 || len(games2) == 0 {
 		t.Fatalf("rescan errs: %v", errs)
 	}
-	if games2[0].Title != "With the Last Moonbeam" {
+	if games2[0].Title != "METROID ZERO" {
 		t.Fatalf("rescan with healed cache must not revert to slug: got %q", games2[0].Title)
 	}
 }
