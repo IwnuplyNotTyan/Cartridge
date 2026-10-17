@@ -206,4 +206,13 @@ func TestScanDirMoonbeam(t *testing.T) {
 	if games[0].Title != "With the Last Moonbeam" {
 		t.Fatalf("ScanDir wanted 'With the Last Moonbeam', got %q", games[0].Title)
 	}
+
+	// Rescan with already healed cache must preserve "With the Last Moonbeam"
+	games2, errs := ScanDir("/Users/q/Documents/Games", games)
+	if len(errs) != 0 || len(games2) == 0 {
+		t.Fatalf("rescan errs: %v", errs)
+	}
+	if games2[0].Title != "With the Last Moonbeam" {
+		t.Fatalf("rescan with healed cache must not revert to slug: got %q", games2[0].Title)
+	}
 }

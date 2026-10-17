@@ -566,14 +566,20 @@ func ScanDir(root string, cache []Game) ([]Game, []error) {
 					return nil
 				}
 			}
-			title, region, tags := ParseTitle(stem)
-			if c.HeaderTitle != "" && (isSlugOrGeneric(stem) || title == "") {
-				title = c.HeaderTitle
+			if !isSlugOrGeneric(stem) {
+				title, region, tags := ParseTitle(stem)
+				if title != "" {
+					c.Title = title
+				}
+				c.Region, c.Tags = region, tags
+			} else {
+				if c.HeaderTitle != "" && isSlugOrGeneric(c.Title) {
+					c.Title = c.HeaderTitle
+				}
+				if c.Title == "" {
+					c.Title = filepath.Base(path)
+				}
 			}
-			if title == "" {
-				title = filepath.Base(path)
-			}
-			c.Title, c.Region, c.Tags = title, region, tags
 			c.ConsoleName = ByID(c.ConsoleID).Name
 			games = append(games, c)
 			return nil
