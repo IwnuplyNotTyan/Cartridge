@@ -16,6 +16,9 @@ func candidateRoots() []string {
 	}
 	if home != "" {
 		roots = append(roots,
+			// Steam for macOS stores userdata and shortcuts under the
+			// user's Application Support directory.
+			filepath.Join(home, "Library", "Application Support", "Steam"),
 			filepath.Join(home, ".local", "share", "Steam"),
 			filepath.Join(home, ".steam", "steam"),
 			filepath.Join(home, ".steam", "root"),
