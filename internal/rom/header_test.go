@@ -144,7 +144,7 @@ func TestResolveTitleSlugFallbackToHeader(t *testing.T) {
 	}
 
 	// Formatted filename keeps its title
-	title, region, _, hdr := ResolveTitle("Metroid - Zero Mission (USA)", "Metroid - Zero Mission (USA).gba", head, "gba", 0)
+	title, region, _, _ := ResolveTitle("Metroid - Zero Mission (USA)", "Metroid - Zero Mission (USA).gba", head, "gba", 0)
 	if title != "Metroid - Zero Mission" || region != "USA" {
 		t.Fatalf("formatted title should be preserved: title=%q, region=%q", title, region)
 	}

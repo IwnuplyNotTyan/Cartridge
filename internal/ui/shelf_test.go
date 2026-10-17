@@ -87,6 +87,7 @@ func TestShelfDedupAndFavMark(t *testing.T) {
 		t.Fatal(err)
 	}
 	play.Add("aaa111", time.Second)
+	time.Sleep(time.Millisecond) // Keep LastPlayed order distinct on fast CI runners.
 	play.Add("bbb222", 2*time.Second)
 	m := shelfModel(t, WithFavorites(fav), WithPlaytime(play))
 	got := shelfTitles(t, m)
@@ -277,6 +278,7 @@ func TestShelfSevenGamesLimit(t *testing.T) {
 	}
 	for _, g := range games {
 		play.Add(g.ID, time.Second)
+		time.Sleep(time.Millisecond) // Guarantee each later game is more recent.
 	}
 	i18n.Set(i18n.En)
 	m := sizedModel(t, New(games, "/x", "/tmp/lib.json", WithPlaytime(play)))
