@@ -7,9 +7,7 @@
 *.dll
 *.so
 *.dylib
-
-# Built binary
-/cartridge
+bin
 
 # Test binary, built with `go test -c`
 *.test

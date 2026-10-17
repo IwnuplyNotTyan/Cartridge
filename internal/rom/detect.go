@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -158,6 +159,7 @@ func ValidGame(g Game) bool {
 type Game struct {
 	ID          string   `json:"id"` // hex sha256 of canonical ROM bytes
 	Title       string   `json:"title"`
+	HeaderTitle string   `json:"header_title,omitempty"`
 	ConsoleID   string   `json:"console_id"`
 	ConsoleName string   `json:"console_name"`
 	Path        string   `json:"path"`            // container on disk (.nes, .zip, ...)
@@ -218,7 +220,7 @@ func PartitionPresent(games []Game) (present, missing []Game) {
 
 // max sniff / hash-handle sizes.
 const (
-	sniffLen       = 0x400
+	sniffLen       = 0x10200
 	maxZipEntryMem = 64 << 20 // 64 MiB safety cap per zip entry
 )
 
@@ -305,24 +307,27 @@ func identifyPlain(path, rawName string) (Game, error) {
 	head = head[:n]
 
 	h := sha256.New()
+	crc := crc32.NewIEEE()
+	mw := io.MultiWriter(h, crc)
+
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return Game{}, err
 	}
-	size, err := io.Copy(h, f)
+	size, err := io.Copy(mw, f)
 	if err != nil {
 		return Game{}, err
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
+	crcVal := crc.Sum32()
 
 	con, _ := sniff(head, filepath.Ext(path))
-	title, region, tags := ParseTitle(strings.TrimSuffix(rawName, filepath.Ext(rawName)))
-	if title == "" {
-		title = rawName // never a blank row (e.g. a file named ".nes")
-	}
+	stem := strings.TrimSuffix(rawName, filepath.Ext(rawName))
+	title, region, tags, headerTitle := ResolveTitle(stem, rawName, head, con.ID, crcVal)
 
 	return Game{
 		ID:          sum,
 		Title:       title,
+		HeaderTitle: headerTitle,
 		ConsoleID:   con.ID,
 		ConsoleName: con.Name,
 		Path:        path,
@@ -361,21 +366,21 @@ func identifyZip(path, rawName string) (Game, error) {
 	data := buf.Bytes()
 	sum := sha256.Sum256(data)
 	sumHex := hex.EncodeToString(sum[:])
+	crcVal := crc32.ChecksumIEEE(data)
 
 	head := data
 	if len(head) > sniffLen {
 		head = head[:sniffLen]
 	}
 	con, _ := sniff(head, filepath.Ext(pick.Name))
-	title, region, tags := ParseTitle(strings.TrimSuffix(filepath.Base(pick.Name), filepath.Ext(pick.Name)))
-	if title == "" {
-		title = filepath.Base(pick.Name) // never a blank row
-	}
+	stem := strings.TrimSuffix(filepath.Base(pick.Name), filepath.Ext(pick.Name))
+	title, region, tags, headerTitle := ResolveTitle(stem, filepath.Base(pick.Name), head, con.ID, crcVal)
 	_ = rawName
 
 	return Game{
 		ID:          sumHex,
 		Title:       title,
+		HeaderTitle: headerTitle,
 		ConsoleID:   con.ID,
 		ConsoleName: con.Name,
 		Path:        path,
@@ -552,7 +557,19 @@ func ScanDir(root string, cache []Game) ([]Game, []error) {
 			// filename-derived fields are re-parsed with the current
 			// parser. Otherwise a parser fix would never heal rows
 			// stored while the old one blanked them (e.g. titles).
-			title, region, tags := ParseTitle(displayStem(path, c.Inner))
+			stem := displayStem(path, c.Inner)
+			if c.HeaderTitle == "" && isSlugOrGeneric(c.Title) {
+				if healed, err := Identify(path); err == nil {
+					healed.FileSize = info.Size()
+					healed.ModTime = info.ModTime().UnixNano()
+					games = append(games, healed)
+					return nil
+				}
+			}
+			title, region, tags := ParseTitle(stem)
+			if c.HeaderTitle != "" && (isSlugOrGeneric(stem) || title == "") {
+				title = c.HeaderTitle
+			}
 			if title == "" {
 				title = filepath.Base(path)
 			}
