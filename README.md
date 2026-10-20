@@ -84,6 +84,8 @@ go build -o ./bin/cartridge main.go
 - [Go Osc52](https://github.com/aymanbagabas/go-osc52/v2) — Copy text to clipboard
 - [Cobra](https://github.com/spf13/cobra) — CLI commands and flags
 - [Fang](https://github.com/charmbracelet/fang) — Pretty help, errors and version
+- [RomPatcher](https://github.com/olsonb97/RomPatcher.go) — Mods support
+- [Go Runewidth](https://github.com/mattn/go-runewidth) — Wcwidth for go
 
 ---
 
