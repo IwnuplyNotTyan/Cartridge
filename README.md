@@ -61,6 +61,37 @@ nix run github:iwnuplynottyan/cartridge
 
 [^2]: Check nixpkgs [changelog](https://nixos.org/manual/nixpkgs/unstable/release-notes#x86_64-darwin-26.11) about intel macos support state
 
+#### Isolated wrapped can be made like it:
+``` nix
+let
+  emus = pkgs.buildEnv {
+    name = "emus";
+    paths = [ pkgs.retroarch ];
+  };
+  cartridge-wrapped = pkgs.symlinkJoin {
+    name = "cartridge";
+    paths = [ cartridgePkg ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/cartridge --prefix PATH : ${emus}/bin
+    '';
+  };
+in {
+  home.packages = [ cartridge-wrapped ];
+}
+```
+
+#### Download recipes:
+
+``` nix
+{
+  home.file.".config/cartridge/recipes/retroarch.json".source = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/IwnuplyNotTyan/Cartridge/refs/heads/main/_examples/retroarch.json";
+    sha256 = "sha256-470b+yHn2xTkEgbvxoLYTfTlKRKesphMK2KFcBtPvQ8=";
+  };
+}
+```
+
 ## ⛏️ Build from source
 ```sh
 git clone https://github.com/IwnuplyNotTyan/Cartridge && cd Cartridge
