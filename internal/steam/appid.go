@@ -1,9 +1,6 @@
 package steam
 
-import (
-	"hash/crc32"
-	"strings"
-)
+import "hash/crc32"
 
 // AppIDFor generates the stable 32-bit non-Steam shortcut id for
 // (exe, appname): crc32(exe+appname) with the top bit forced, the same
@@ -27,5 +24,6 @@ func ShortcutID64(appID uint32) uint64 {
 	return (uint64(appID) << 32) | 0x02000000
 }
 
-// exeKey normalizes exe for stable matching across syncs.
-func exeKey(exe string) string { return strings.TrimSpace(exe) }
+// exeKey normalizes exe for stable matching across syncs. Steam on
+// Windows stores paths quoted, while CLI/config input is usually not.
+func exeKey(exe string) string { return unquoteSteamPath(exe) }

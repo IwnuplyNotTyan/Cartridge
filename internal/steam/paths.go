@@ -26,6 +26,8 @@ func candidateRoots() []string {
 			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
 		)
 	}
+	// Platform-specific installs (Windows registry / Program Files).
+	roots = append(roots, platformRoots()...)
 	// Dedupe, keep order.
 	seen := map[string]bool{}
 	out := roots[:0]
@@ -97,33 +99,4 @@ func DiscoverTargets(cfgUsers []string) []UserTarget {
 
 // SteamRunning reports whether a steam process seems to be alive.
 // Writing while running is allowed but lossy; callers should warn.
-func SteamRunning() bool {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		isNum := true
-		for _, c := range name {
-			if c < '0' || c > '9' {
-				isNum = false
-				break
-			}
-		}
-		if !isNum {
-			continue
-		}
-		comm, err := os.ReadFile(filepath.Join("/proc", name, "comm"))
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(string(comm)) == "steam" {
-			return true
-		}
-	}
-	return false
-}
+func SteamRunning() bool { return steamProcessRunning() }

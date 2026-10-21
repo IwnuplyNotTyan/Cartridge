@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -28,12 +29,22 @@ func DefaultExe(cfg config.SteamConfig) string {
 
 // BuildShortcut builds the Steam entry for one game.
 func BuildShortcut(g rom.Game, cfg config.SteamConfig, exe, startDir string) Shortcut {
+	return buildShortcut(g, cfg, exe, startDir, runtime.GOOS == "windows")
+}
+
+// buildShortcut is BuildShortcut with explicit path quoting. Steam on
+// Windows stores shortcut Exe/StartDir wrapped in quotes; unquoted paths
+// (especially ones containing spaces) fail to launch.
+func buildShortcut(g rom.Game, cfg config.SteamConfig, exe, startDir string, quote bool) Shortcut {
 	if strings.TrimSpace(exe) == "" {
 		exe = DefaultExe(cfg)
 	}
+	exe = unquoteSteamPath(exe)
 	if strings.TrimSpace(startDir) == "" {
 		startDir = filepath.Dir(exe)
 	}
+	exe = quoteSteamPath(exe, quote)
+	startDir = quoteSteamPath(startDir, quote)
 	name := AppNameFor(g)
 	id := AppIDFor(exe, name)
 	return Shortcut{
