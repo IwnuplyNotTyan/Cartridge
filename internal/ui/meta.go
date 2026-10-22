@@ -115,10 +115,10 @@ func (m Model) launchCmd(game rom.Game, r *emulate.Recipe) (*exec.Cmd, error) {
 			}
 			rc := *r
 			rc.Cores = map[string][]string{game.ConsoleID: {core}}
-			return rc.Command(game)
+			return rc.Command(game, m.openAppsEnabled())
 		}
 	}
-	return r.Command(game)
+	return r.Command(game, m.openAppsEnabled())
 }
 
 // metaEdge jumps to the first (last=false) or last selectable row.

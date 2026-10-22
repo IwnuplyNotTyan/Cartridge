@@ -63,11 +63,16 @@ type Mods struct {
 
 // Recipe is one emulator launch template.
 type Recipe struct {
-	Name         string       `json:"name"`
-	Consoles     []string     `json:"consoles,omitempty"`
-	Extensions   []string     `json:"extensions,omitempty"`
-	Games        []string     `json:"games,omitempty"`
-	Emulator     string       `json:"emulator"`
+	Name       string   `json:"name"`
+	Consoles   []string `json:"consoles,omitempty"`
+	Extensions []string `json:"extensions,omitempty"`
+	Games      []string `json:"games,omitempty"`
+	Emulator   string   `json:"emulator"`
+	// Open forces whether Emulator is a macOS application bundle
+	// name/path launched via `open -W -a <emulator>` instead of
+	// executing a binary. nil inherits the global `open_apps` default;
+	// true/false override it for this recipe.
+	Open         *bool        `json:"open,omitempty"`
 	Args         []string     `json:"args,omitempty"`
 	WorkDir      string       `json:"workdir,omitempty"`
 	Cheats       Cheats       `json:"cheats,omitempty"`
@@ -83,6 +88,34 @@ type Recipe struct {
 	// for it (e.g. RetroArch core display names like "mGBA"), expanding
 	// as {core_name}. Without an entry the core file stem is used.
 	CoreNames map[string]string `json:"core_names,omitempty"`
+}
+
+// OpenEnabled reports whether the recipe launches through `open -W -a`.
+// An explicit Open wins; otherwise the global open_apps default applies.
+func (r Recipe) OpenEnabled(openApps bool) bool {
+	if r.Open != nil {
+		return *r.Open
+	}
+	return openApps
+}
+
+// LaunchLabel renders the effective launcher for display: `open -a` for
+// app recipes, the binary otherwise.
+func (r Recipe) LaunchLabel(openApps bool) string {
+	if r.OpenEnabled(openApps) {
+		return "open -a " + r.Emulator
+	}
+	return r.Emulator
+}
+
+// LookupTarget resolves the recipe's launch target. App recipes launch
+// the macOS `open` command, which in turn resolves the app name; other
+// recipes resolve their emulator binary.
+func (r Recipe) LookupTarget(openApps bool) (string, bool) {
+	if r.OpenEnabled(openApps) {
+		return LookupBinary("open")
+	}
+	return LookupBinary(r.Emulator)
 }
 
 // CoreNameFor resolves the {core_name} value for a console: the explicit
@@ -215,7 +248,7 @@ func loadRecipeFile(path string) ([]Recipe, error) {
 	return checkRecipes([]Recipe{single}, path)
 }
 
-// checkRecipes validates recipes and defaults an empty name to the emulator.
+// checkRecipes validates recipes and defaults an empty name to the launcher.
 func checkRecipes(rs []Recipe, path string) ([]Recipe, error) {
 	for i := range rs {
 		r := &rs[i]
@@ -281,8 +314,10 @@ func recipeMatches(r *Recipe, g rom.Game, ext string) bool {
 }
 
 // Command builds the emulator process for g, expanding placeholders.
-// Unknown {placeholders} are an error to help recipe authors.
-func (r Recipe) Command(g rom.Game) (*exec.Cmd, error) {
+// Unknown {placeholders} are an error to help recipe authors. When
+// openApps is true and the recipe is marked Open, the emulator name is
+// launched as a macOS application via `open -W -a`.
+func (r Recipe) Command(g rom.Game, openApps bool) (*exec.Cmd, error) {
 	if strings.TrimSpace(r.Emulator) == "" {
 		return nil, fmt.Errorf("recipe %q has no emulator", r.Name)
 	}
@@ -315,7 +350,19 @@ func (r Recipe) Command(g rom.Game) (*exec.Cmd, error) {
 		}
 		args[i] = s
 	}
-	cmd := exec.Command(r.Emulator, args...)
+	var cmd *exec.Cmd
+	if r.OpenEnabled(openApps) {
+		app, err := expand(r.Emulator, vars)
+		if err != nil {
+			return nil, fmt.Errorf("recipe %q app: %w", r.Name, err)
+		}
+		// -W keeps `open` alive until the app quits, so playtime and the
+		// TUI run screen follow the real game session.
+		openArgs := append([]string{"-W", "-a", app}, args...)
+		cmd = exec.Command("open", openArgs...)
+	} else {
+		cmd = exec.Command(r.Emulator, args...)
+	}
 	if strings.TrimSpace(r.WorkDir) != "" {
 		wd, err := expand(r.WorkDir, vars)
 		if err != nil {

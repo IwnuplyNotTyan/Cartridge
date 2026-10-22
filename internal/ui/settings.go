@@ -77,11 +77,15 @@ func langOptions() [][2]string {
 	return opts
 }
 
-// generalRows is the General tab row count: the art toggle on top,
-// then one row per language choice (Auto first).
-func generalRows() int {
-	return 1 + len(langOptions())
-}
+// langRowCount is the number of language choices (Auto first).
+func langRowCount() int { return len(langOptions()) }
+
+// openAppsRow is the General tab cursor row for the open -a switch.
+func openAppsRow() int { return 1 + langRowCount() }
+
+// generalRows is the General tab row count: art, languages, then the
+// Advanced section with the open -a switch.
+func (m Model) generalRows() int { return openAppsRow() + 1 }
 
 // artOnOff returns the localized on/off mark for the art toggle.
 func artOnOff(on bool) string {
@@ -163,6 +167,7 @@ func (m *Model) persistSettings() error {
 	}
 	steam := m.steam
 	showArt := m.showArt
+	openApps := m.openApps
 	f := config.File{
 		RomDir:    m.romDir,
 		Library:   m.libPath,
@@ -173,6 +178,7 @@ func (m *Model) persistSettings() error {
 		ModsDir:   m.modsDir,
 		Patched:   m.patchedDir,
 		CheatsDir: m.cheatsDir,
+		OpenApps:  &openApps,
 		Steam:     &steam,
 	}
 	if err := config.SaveFile(path, f); err != nil {
@@ -188,6 +194,15 @@ func (m *Model) persistSettings() error {
 func (m *Model) toggleArt() tea.Cmd {
 	m.showArt = !m.showArt
 	m.refreshMeta()
+	if err := m.persistSettings(); err != nil {
+		return m.setStatus(i18n.T("status.sett.save_fail", err))
+	}
+	return m.setStatus(i18n.T("status.sett.saved"))
+}
+
+// toggleOpenApps flips the global open -a launch switch and persists.
+func (m *Model) toggleOpenApps() tea.Cmd {
+	m.openApps = !m.openApps
 	if err := m.persistSettings(); err != nil {
 		return m.setStatus(i18n.T("status.sett.save_fail", err))
 	}

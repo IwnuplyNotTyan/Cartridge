@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"cartridge/internal/i18n"
@@ -20,6 +21,7 @@ func cleanEnv(t *testing.T, home string) {
 	t.Setenv(EnvRecipes, "")
 	t.Setenv(EnvCheats, "")
 	t.Setenv(EnvShowArt, "")
+	t.Setenv(EnvOpenApps, "")
 	t.Setenv("CARTRIDGE_NO_POSTER", "")
 	t.Setenv("LANG", "en_US.UTF-8")
 	t.Setenv("LC_ALL", "")
@@ -244,5 +246,45 @@ func TestExpandTilde(t *testing.T) {
 	}
 	if want := filepath.Join(home, "roms"); c.RomDir != want {
 		t.Fatalf("RomDir = %q, want %q", c.RomDir, want)
+	}
+}
+
+func TestResolveOpenApps(t *testing.T) {
+	home := t.TempDir()
+	cleanEnv(t, home)
+	c, err := Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.OpenApps != (runtime.GOOS == "darwin") {
+		t.Fatalf("OpenApps default = %v on %s", c.OpenApps, runtime.GOOS)
+	}
+
+	cfgDir := filepath.Join(home, ".config", "cartridge")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"open_apps": false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.OpenApps {
+		t.Fatalf("file open setting broken: %+v", c)
+	}
+	if f := c.ToFile(); f.OpenApps == nil || *f.OpenApps {
+		t.Fatalf("ToFile open setting = %+v", f)
+	}
+
+	// Env beats file.
+	t.Setenv(EnvOpenApps, "1")
+	c, err = Resolve("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !c.OpenApps {
+		t.Fatalf("env open_apps=1 must enable open mode: %+v", c)
 	}
 }

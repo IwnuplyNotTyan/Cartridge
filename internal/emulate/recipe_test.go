@@ -95,7 +95,7 @@ func TestMatchShortIDAndInnerExt(t *testing.T) {
 
 func TestCommandPlaceholders(t *testing.T) {
 	r := Recipe{Name: "r", Emulator: "emu", Args: []string{"{rom}", "{title}", "{console}{ext}", "{shortid}"}}
-	cmd, err := r.Command(nesGame())
+	cmd, err := r.Command(nesGame(), false)
 	if err != nil {
 		t.Fatalf("Command: %v", err)
 	}
@@ -110,9 +110,74 @@ func TestCommandPlaceholders(t *testing.T) {
 	}
 }
 
+func TestCommandOpenLauncher(t *testing.T) {
+	on, off := true, false
+	// A recipe with no explicit setting inherits the global default.
+	r := Recipe{Name: "openemu", Emulator: "OpenEmu", Args: []string{"{rom}"}}
+	cmd, err := r.Command(nesGame(), true)
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	want := []string{"open", "-W", "-a", "OpenEmu", "/x/battle.nes"}
+	if len(cmd.Args) != len(want) {
+		t.Fatalf("args = %q, want %q", cmd.Args, want)
+	}
+	for i := range want {
+		if cmd.Args[i] != want[i] {
+			t.Fatalf("args = %q, want %q", cmd.Args, want)
+		}
+	}
+	cmd, err = r.Command(nesGame(), false)
+	if err != nil {
+		t.Fatalf("Command direct: %v", err)
+	}
+	if cmd.Args[0] != "OpenEmu" {
+		t.Fatalf("direct args = %q", cmd.Args)
+	}
+
+	// Forced on/off wins over the global default.
+	r.Open = &on
+	cmd, err = r.Command(nesGame(), false)
+	if err != nil {
+		t.Fatalf("Command forced open: %v", err)
+	}
+	if cmd.Args[0] != "open" {
+		t.Fatalf("forced open args = %q", cmd.Args)
+	}
+	r.Open = &off
+	cmd, err = r.Command(nesGame(), true)
+	if err != nil {
+		t.Fatalf("Command forced direct: %v", err)
+	}
+	if cmd.Args[0] != "OpenEmu" {
+		t.Fatalf("forced direct args = %q", cmd.Args)
+	}
+}
+
+func TestLoadOpenRecipe(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "open.json")
+	if err := os.WriteFile(p, []byte(`{"name":"OpenEmu","emulator":"OpenEmu","open":true,"args":["{rom}"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || rs[0].Open == nil || !*rs[0].Open || rs[0].Emulator != "OpenEmu" {
+		t.Fatalf("loaded = %+v", rs)
+	}
+	if err := os.WriteFile(p, []byte(`{"name":"broken"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatalf("recipe without emulator must fail")
+	}
+}
+
 func TestCommandUnknownPlaceholder(t *testing.T) {
 	r := Recipe{Name: "r", Emulator: "emu", Args: []string{"{nope}"}}
-	if _, err := r.Command(nesGame()); err == nil {
+	if _, err := r.Command(nesGame(), false); err == nil {
 		t.Fatalf("expected unknown placeholder error")
 	}
 }
@@ -287,7 +352,7 @@ func TestCommandCorePlaceholder(t *testing.T) {
 	r := Recipe{Name: "ra", Emulator: "retroarch",
 		Args:  []string{"-L", "{core}", "{rom}"},
 		Cores: map[string][]string{"nes": {"nestopia_libretro.so", "mesen_libretro.so"}}}
-	cmd, err := r.Command(nesGame())
+	cmd, err := r.Command(nesGame(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,12 +365,12 @@ func TestCommandCorePlaceholder(t *testing.T) {
 	// Console without a core fails loudly instead of launching bare.
 	gba := nesGame()
 	gba.ConsoleID = "gba"
-	if _, err := r.Command(gba); err == nil {
+	if _, err := r.Command(gba, false); err == nil {
 		t.Fatalf("Command must fail without a core for gba")
 	}
 	// {core} without any Cores map stays an unknown placeholder.
 	plain := Recipe{Name: "plain", Emulator: "retroarch", Args: []string{"-L", "{core}", "{rom}"}}
-	if _, err := plain.Command(nesGame()); err == nil {
+	if _, err := plain.Command(nesGame(), false); err == nil {
 		t.Fatalf("Command must fail on {core} without cores")
 	}
 }
@@ -314,7 +379,7 @@ func TestCoreNamePlaceholder(t *testing.T) {
 	r := Recipe{Name: "ra", Emulator: "retroarch",
 		Args:  []string{"-L", "{core}", "--cfg", "{core_name}.cfg"},
 		Cores: map[string][]string{"nes": {"/usr/lib/nestopia_libretro.so"}}}
-	cmd, err := r.Command(nesGame())
+	cmd, err := r.Command(nesGame(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +391,7 @@ func TestCoreNamePlaceholder(t *testing.T) {
 	}
 	// {core_name} without any Cores map stays an unknown placeholder.
 	plain := Recipe{Name: "plain", Emulator: "retroarch", Args: []string{"{core_name}"}}
-	if _, err := plain.Command(nesGame()); err == nil {
+	if _, err := plain.Command(nesGame(), false); err == nil {
 		t.Fatalf("Command must fail on {core_name} without cores")
 	}
 }
@@ -381,12 +446,12 @@ func TestCoreNameFor(t *testing.T) {
 	bareCmd := Recipe{Name: "bare", Emulator: "retroarch",
 		Args:      []string{"-L", "{core}", "{rom}"},
 		CoreNames: map[string]string{"nes": "Nestopia"}}
-	if _, err := bareCmd.Command(nesGame()); err == nil {
+	if _, err := bareCmd.Command(nesGame(), false); err == nil {
 		t.Fatalf("Command must fail on {core} without cores")
 	}
 	cmd, err := (Recipe{Name: "bare", Emulator: "retroarch",
 		Args:      []string{"{core_name}"},
-		CoreNames: map[string]string{"nes": "Nestopia"}}).Command(nesGame())
+		CoreNames: map[string]string{"nes": "Nestopia"}}).Command(nesGame(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +491,7 @@ func TestPatchCoresApply(t *testing.T) {
 	if len(base[0].Cores["nes"]) != 1 || base[0].Cores["nes"][0] != "a.so" {
 		t.Fatalf("base must stay untouched: %+v", base[0].Cores)
 	}
-	cmd, err := patched[0].Command(nesGame())
+	cmd, err := patched[0].Command(nesGame(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

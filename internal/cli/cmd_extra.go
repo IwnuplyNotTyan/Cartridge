@@ -248,12 +248,13 @@ recipes/patches load, emulator binaries and cheat/mod dirs.`,
 			}
 			seen := map[string]bool{}
 			for _, r := range a.recipes {
-				if seen[r.Emulator] {
+				target := r.LaunchLabel(a.cfg.OpenApps)
+				if seen[target] {
 					continue
 				}
-				seen[r.Emulator] = true
-				_, found := emulate.LookupBinary(r.Emulator)
-				check("emulator", r.Emulator, found)
+				seen[target] = true
+				_, found := r.LookupTarget(a.cfg.OpenApps)
+				check("emulator", target, found)
 			}
 			if fail > 0 {
 				return fmt.Errorf("doctor found %d problem(s)", fail)

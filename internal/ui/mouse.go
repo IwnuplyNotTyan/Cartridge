@@ -538,16 +538,19 @@ func (m Model) mouseLeftSettings(paneX, bodyY int) (tea.Model, tea.Cmd) {
 	}
 }
 
-// mouseSettingsGeneral selects a General tab row: vis 0 is the art
-// toggle, vis 1-3 are the blank + Language strip + blank (focus only),
-// vis 4+ are the language rows (settCur = vis-3).
+// mouseSettingsGeneral selects a General tab row: art, languages, then
+// the Advanced switches. Blank lines and section strips only take focus.
 // Double-click activates like Enter.
 func (m Model) mouseSettingsGeneral(vis int) (tea.Model, tea.Cmd) {
+	langStart, langEnd := 4, 4+langRowCount()
+	openLine := langEnd + 3
 	switch {
 	case vis == 0:
-		return m.mouseSettingsSimple(0, generalRows())
-	case vis >= 4:
-		return m.mouseSettingsSimple(vis-3, generalRows())
+		return m.mouseSettingsSimple(0, m.generalRows())
+	case vis >= langStart && vis < langEnd:
+		return m.mouseSettingsSimple(vis-3, m.generalRows())
+	case vis == openLine:
+		return m.mouseSettingsSimple(openAppsRow(), m.generalRows())
 	default:
 		if !m.settActive {
 			m.openSettings()

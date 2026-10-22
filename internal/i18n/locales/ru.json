@@ -216,6 +216,11 @@
     "status.sett.patch_dropped": "патч сброшен: %s",
     "status.sett.patch_fail": "патч не сохранился: %v",
     "status.sett.moved": "рецепт перемещён: %s",
-    "status.sett.recipes_save_fail": "рецепты не сохранились: %v"
+    "status.sett.recipes_save_fail": "рецепты не сохранились: %v",
+    "sett.recipes.open": "open -a",
+    "sett.recipes.open_default": "по умолчанию (%s)",
+    "sett.recipes.open_forced": "принудительно (%s)",
+    "sett.general.advanced": "Дополнительно",
+    "sett.general.open_apps": "приложения через open -a: %s"
   }
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"cartridge/internal/i18n"
@@ -35,6 +36,8 @@ const (
 	EnvIconsDir      = "CARTRIDGE_ICONS_DIR"
 	// Poster preview overrides.
 	EnvShowArt = "CARTRIDGE_SHOW_ART"
+	// macOS app launching override.
+	EnvOpenApps = "CARTRIDGE_OPEN_APPS"
 )
 
 // SteamConfig controls the Steam non-Steam shortcuts integration.
@@ -108,16 +111,19 @@ func (s SteamConfig) EffectiveTemplate() string {
 
 // File is the on-disk JSON config (~/.config/cartridge/config.json).
 type File struct {
-	RomDir    string       `json:"rom_dir"`
-	Library   string       `json:"library"`
-	Lang      string       `json:"lang"`
-	ShowArt   *bool        `json:"show_art,omitempty"`
-	Recipes   string       `json:"recipes"`
-	Patches   string       `json:"patches,omitempty"`
-	ModsDir   string       `json:"mods_dir,omitempty"`
-	Patched   string       `json:"patched_dir,omitempty"`
-	CheatsDir string       `json:"cheats_dir,omitempty"`
-	Steam     *SteamConfig `json:"steam,omitempty"`
+	RomDir    string `json:"rom_dir"`
+	Library   string `json:"library"`
+	Lang      string `json:"lang"`
+	ShowArt   *bool  `json:"show_art,omitempty"`
+	Recipes   string `json:"recipes"`
+	Patches   string `json:"patches,omitempty"`
+	ModsDir   string `json:"mods_dir,omitempty"`
+	Patched   string `json:"patched_dir,omitempty"`
+	CheatsDir string `json:"cheats_dir,omitempty"`
+	// OpenApps is the default for recipes that do not force their own
+	// `open` setting: launch through `open -a` (macOS apps) when true.
+	OpenApps *bool        `json:"open_apps,omitempty"`
+	Steam    *SteamConfig `json:"steam,omitempty"`
 }
 
 // Config is the fully resolved runtime configuration.
@@ -131,6 +137,7 @@ type Config struct {
 	ModsDir    string
 	Patched    string
 	CheatsDir  string
+	OpenApps   bool
 	Steam      SteamConfig
 	ConfigFile string // file actually read ("" when none)
 }
@@ -264,6 +271,15 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		showArt = false
 	}
 
+	// macOS app launching: on by default on macOS, off elsewhere.
+	openApps := runtime.GOOS == "darwin"
+	if f.OpenApps != nil {
+		openApps = *f.OpenApps
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvOpenApps)); v != "" {
+		openApps = parseBoolEnv(v, openApps)
+	}
+
 	steam := DefaultSteamConfig()
 	if f.Steam != nil {
 		steam = *f.Steam
@@ -312,6 +328,7 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 		ModsDir:    expandPath(firstNonEmpty(os.Getenv(EnvMods), f.ModsDir, DefaultModsDir())),
 		Patched:    expandPath(firstNonEmpty(os.Getenv(EnvPatched), f.Patched, DefaultPatchedDir())),
 		CheatsDir:  expandPath(firstNonEmpty(os.Getenv(EnvCheats), f.CheatsDir, DefaultCheatsDir())),
+		OpenApps:   openApps,
 		Steam:      steam,
 		ConfigFile: used,
 	}, nil
@@ -363,6 +380,7 @@ func (c Config) ToFile() File {
 	}
 	steam := c.Steam
 	showArt := c.ShowArt
+	openApps := c.OpenApps
 	return File{
 		RomDir:    c.RomDir,
 		Library:   c.Library,
@@ -373,6 +391,7 @@ func (c Config) ToFile() File {
 		ModsDir:   c.ModsDir,
 		Patched:   c.Patched,
 		CheatsDir: c.CheatsDir,
+		OpenApps:  &openApps,
 		Steam:     &steam,
 	}
 }

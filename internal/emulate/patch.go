@@ -15,6 +15,7 @@ import (
 type RecipePatch struct {
 	Recipe       string               `json:"recipe"`
 	Emulator     *string              `json:"emulator,omitempty"`
+	Open         *bool                `json:"open,omitempty"`
 	Args         *[]string            `json:"args,omitempty"`
 	WorkDir      *string              `json:"workdir,omitempty"`
 	Consoles     *[]string            `json:"consoles,omitempty"`
@@ -135,6 +136,9 @@ func ApplyPatches(base []Recipe, patches []RecipePatch) []Recipe {
 		if p.Emulator != nil {
 			r.Emulator = *p.Emulator
 		}
+		if p.Open != nil {
+			r.Open = p.Open
+		}
 		if p.Args != nil {
 			r.Args = append([]string(nil), (*p.Args)...)
 		}
@@ -240,6 +244,7 @@ func UpsertPatch(patches []RecipePatch, p RecipePatch) []RecipePatch {
 // samePatchFields reports whether a and b override the same set of fields.
 func samePatchFields(a, b RecipePatch) bool {
 	return (a.Emulator != nil) == (b.Emulator != nil) &&
+		(a.Open != nil) == (b.Open != nil) &&
 		(a.Args != nil) == (b.Args != nil) &&
 		(a.WorkDir != nil) == (b.WorkDir != nil) &&
 		(a.Consoles != nil) == (b.Consoles != nil) &&

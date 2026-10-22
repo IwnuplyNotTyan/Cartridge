@@ -125,7 +125,10 @@ type Model struct {
 	// showArt toggles the poster preview (ascii/half-block art) in the
 	// metadata pane. True by default; flipped from the General tab.
 	showArt bool
-	steam   config.SteamConfig
+	// openApps is the default for recipes that do not force their
+	// own `open` setting.
+	openApps bool
+	steam    config.SteamConfig
 
 	baseRecipes []emulate.Recipe
 	patches     []emulate.RecipePatch
@@ -220,6 +223,14 @@ func WithLangRaw(raw string) Option {
 func WithShowArt(v bool) Option {
 	return func(m *Model) { m.showArt = v }
 }
+
+// WithOpenApps sets the default for recipes that do not force `open`.
+func WithOpenApps(open bool) Option {
+	return func(m *Model) { m.openApps = open }
+}
+
+// openAppsEnabled reports the global `open -a` default.
+func (m Model) openAppsEnabled() bool { return m.openApps }
 
 // WithSteam sets the Steam integration settings (auto-add, categories).
 func WithSteam(s config.SteamConfig) Option {

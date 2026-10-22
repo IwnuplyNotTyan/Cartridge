@@ -25,6 +25,7 @@ func settingsModel(t *testing.T) Model {
 		WithPatches(patches),
 		WithPaths(filepath.Join(t.TempDir(), "config.json"), "/r/recipes.json", "/r/patches.json", "/m", "/c"),
 		WithLangRaw("auto"),
+		WithOpenApps(true),
 	)
 	return sizedModel(t, m)
 }
@@ -422,8 +423,8 @@ func TestSettingsLangSelectedStyle(t *testing.T) {
 	m.settCur = 0    // cursor on the art toggle
 	lines := m.renderGeneralTab(40)
 	// Toggle + blank + Language strip + blank + 3 language options.
-	if len(lines) != 7 {
-		t.Fatalf("general tab must list toggle + strip + 3 options, got %d", len(lines))
+	if len(lines) != 11 {
+		t.Fatalf("general tab must list toggles + strip + 3 options, got %d", len(lines))
 	}
 	// Selected language: bold white, no background.
 	if want := "  " + langActive.Render("Русский"); lines[6] != want {
@@ -448,8 +449,8 @@ func TestGeneralToggleAndLangStrip(t *testing.T) {
 	m.settTab = TabGeneral
 	m.settCur = 1 // cursor away from the toggle
 	lines := m.renderGeneralTab(40)
-	if len(lines) != 7 {
-		t.Fatalf("general tab must list toggle + strip + 3 options, got %d", len(lines))
+	if len(lines) != 11 {
+		t.Fatalf("general tab must list toggles + strip + 3 options, got %d", len(lines))
 	}
 	// The Language divider strip sits under the art toggle,
 	// with breathing blank lines around it.
@@ -641,5 +642,25 @@ func TestSettingsIdlePathsItalicGrey(t *testing.T) {
 	}
 	if !m.isPathIdle(1) {
 		t.Fatalf("non-edited row must stay idle while editing")
+	}
+}
+
+func TestGeneralOpenAppsToggles(t *testing.T) {
+	m := openSettings(t, settingsModel(t))
+	m.settTab = TabGeneral
+	m.openApps = true
+
+	m.settCur = openAppsRow()
+	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = out.(Model)
+	if m.openApps {
+		t.Fatalf("enter must toggle open -a off")
+	}
+	data, err := os.ReadFile(m.cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"open_apps": false`) {
+		t.Fatalf("open setting must persist: %s", data)
 	}
 }

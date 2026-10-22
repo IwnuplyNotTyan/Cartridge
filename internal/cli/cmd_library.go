@@ -37,7 +37,7 @@ display one recipe or check that emulator binaries exist.`,
 					status := dimStyle.Render("·")
 					binNote := ""
 					if check {
-						if p, found := emulate.LookupBinary(r.Emulator); found {
+						if p, found := r.LookupTarget(a.cfg.OpenApps); found {
 							status = okStyle.Render("●")
 							binNote = dimStyle.Render("  → " + p)
 						} else {
@@ -54,7 +54,7 @@ display one recipe or check that emulator binaries exist.`,
 						scope = idStyle.Render(strings.Join(r.Extensions, ", "))
 					}
 					cprintf(cmd, "%s %2d. %-24s  %-14s  %s%s\n",
-						status, i+1, titleStyle.Render(r.Name), r.Emulator, scope, binNote)
+						status, i+1, titleStyle.Render(r.Name), r.LaunchLabel(a.cfg.OpenApps), scope, binNote)
 					if r.Note != "" {
 						cprintf(cmd, "      %s\n", dimStyle.Render(truncate(r.Note, 80)))
 					}
@@ -88,14 +88,14 @@ display one recipe or check that emulator binaries exist.`,
 					if winner != nil && m.Name == winner.Name {
 						mark = okStyle.Render("▶")
 					}
-					proc, err := m.Command(g)
+					proc, err := m.Command(g, a.cfg.OpenApps)
 					note := ""
 					if err != nil {
 						note = "  " + errStyle.Render(err.Error())
 					} else {
 						note = "  " + dimStyle.Render(shellJoin(proc))
 					}
-					cprintf(cmd, "  %s %-22s %-12s%s\n", mark, titleStyle.Render(m.Name), m.Emulator, note)
+					cprintf(cmd, "  %s %-22s %-12s%s\n", mark, titleStyle.Render(m.Name), m.LaunchLabel(a.cfg.OpenApps), note)
 				}
 				return nil
 			},
@@ -129,14 +129,15 @@ display one recipe or check that emulator binaries exist.`,
 				cprintf(cmd, "%s\n\n", banner("Emulator check", ""))
 				bad := 0
 				for _, r := range a.recipes {
-					if seen[r.Emulator] {
+					target := r.LaunchLabel(a.cfg.OpenApps)
+					if seen[target] {
 						continue
 					}
-					seen[r.Emulator] = true
-					if p, found := emulate.LookupBinary(r.Emulator); found {
-						cprintf(cmd, "  %s %-16s %s\n", ok(""), r.Emulator, dimStyle.Render(p))
+					seen[target] = true
+					if p, found := r.LookupTarget(a.cfg.OpenApps); found {
+						cprintf(cmd, "  %s %-16s %s\n", ok(""), target, dimStyle.Render(p))
 					} else {
-						cprintf(cmd, "  %s %-16s %s\n", errMark(""), r.Emulator, dimStyle.Render("not found in PATH"))
+						cprintf(cmd, "  %s %-16s %s\n", errMark(""), target, dimStyle.Render("not found in PATH"))
 						bad++
 					}
 				}

@@ -23,6 +23,7 @@ type recipeField struct {
 func recipeFields() []recipeField {
 	return []recipeField{
 		{"emulator", "sett.recipes.emulator"},
+		{"open", "sett.recipes.open"},
 		{"args", "sett.recipes.args"},
 		{"cores", "sett.recipes.cores"},
 		{"core_names", "sett.recipes.core_names"},
@@ -66,7 +67,7 @@ func (m *Model) startRecipeEdit(field string) {
 	}
 	m.settPatchField = field
 	m.settField = recipeFieldIndex(field)
-	m.settBuf = []rune(fieldBuffer(field, m.effectiveRecipe()))
+	m.settBuf = []rune(fieldBuffer(field, m.effectiveRecipe(), m.openAppsEnabled()))
 	m.settEditing = true
 }
 
@@ -92,6 +93,12 @@ func (m *Model) saveRecipeEdit() tea.Cmd {
 	var p emulate.RecipePatch
 	p.Recipe = name
 	switch field {
+	case "open":
+		on, _, err := parseFeatureBool(v)
+		if err != nil {
+			return m.setStatus(i18n.T("status.sett.patch_fail", err))
+		}
+		p.Open = &on
 	case "args":
 		args := splitArgs(v)
 		p.Args = &args
@@ -162,8 +169,10 @@ func (m *Model) saveRecipeEdit() tea.Cmd {
 }
 
 // fieldBuffer renders the effective field value as an editable line.
-func fieldBuffer(field string, eff emulate.Recipe) string {
+func fieldBuffer(field string, eff emulate.Recipe, openApps bool) string {
 	switch field {
+	case "open":
+		return boolBuffer(eff.OpenEnabled(openApps))
 	case "args":
 		return joinArgs(eff.Args)
 	case "cores":
@@ -189,6 +198,23 @@ func fieldBuffer(field string, eff emulate.Recipe) string {
 	default:
 		return eff.Emulator
 	}
+}
+
+// openDisplay renders the effective `open` setting: inherited from the
+// global switch, or forced on/off by the recipe/patch.
+func openDisplay(open *bool, openApps bool) string {
+	if open == nil {
+		return i18n.T("sett.recipes.open_default", artOnOff(openApps))
+	}
+	return i18n.T("sett.recipes.open_forced", artOnOff(*open))
+}
+
+// boolBuffer renders a boolean patch field as an editable line.
+func boolBuffer(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
 
 // featureBuffer renders a supported+path/note feature as an editable line:
@@ -421,18 +447,23 @@ func joinArgs(args []string) string {
 // fieldDisplay renders the effective field value for a detail row.
 // The emulator row also carries the binary check and the base →
 // effective transition when a patch overrides it.
-func fieldDisplay(name string, base, eff emulate.Recipe) string {
+func fieldDisplay(name string, base, eff emulate.Recipe, openApps bool) string {
 	var val string
 	switch name {
 	case "emulator":
-		val = eff.Emulator
-		if base.Emulator != eff.Emulator {
-			val = base.Emulator + " → " + eff.Emulator
+		val = eff.LaunchLabel(openApps)
+		if base.LaunchLabel(openApps) != eff.LaunchLabel(openApps) {
+			val = base.LaunchLabel(openApps) + " → " + eff.LaunchLabel(openApps)
 		}
-		if bin, ok := emulate.LookupBinary(eff.Emulator); ok {
+		if bin, ok := eff.LookupTarget(openApps); ok {
 			val += " • " + i18n.T("sett.recipes.binary_ok", bin)
 		} else {
 			val += " • " + i18n.T("sett.recipes.binary_missing", eff.Emulator)
+		}
+	case "open":
+		val = openDisplay(eff.Open, openApps)
+		if openDisplay(base.Open, openApps) != val {
+			val = openDisplay(base.Open, openApps) + " → " + val
 		}
 	case "args":
 		val = joinArgs(eff.Args)

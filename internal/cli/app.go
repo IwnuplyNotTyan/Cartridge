@@ -243,6 +243,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		ui.WithPatchedDir(a.cfg.Patched),
 		ui.WithLangRaw(a.rawLang),
 		ui.WithShowArt(a.cfg.ShowArt),
+		ui.WithOpenApps(a.cfg.OpenApps),
 		ui.WithSteam(a.cfg.Steam),
 		ui.WithPlaytime(a.play),
 		ui.WithOverrides(a.over),

@@ -24,6 +24,18 @@ func TestApplyPatchesOverlay(t *testing.T) {
 	}
 }
 
+func TestApplyPatchesOpen(t *testing.T) {
+	base := []Recipe{{Name: "openemu", Emulator: "OpenEmu"}}
+	open := true
+	got := ApplyPatches(base, []RecipePatch{{Recipe: "openemu", Open: &open}})
+	if got[0].Open == nil || !*got[0].Open {
+		t.Fatalf("open patch not applied: %+v", got[0])
+	}
+	if base[0].Open != nil {
+		t.Fatalf("base must not be mutated: %+v", base[0])
+	}
+}
+
 func TestLoadPatchesRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "patches.json")

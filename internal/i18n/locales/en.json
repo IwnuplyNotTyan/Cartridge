@@ -216,6 +216,11 @@
     "status.sett.patch_dropped": "patch dropped: %s",
     "status.sett.patch_fail": "patch save failed: %v",
     "status.sett.moved": "moved recipe: %s",
-    "status.sett.recipes_save_fail": "recipes save failed: %v"
+    "status.sett.recipes_save_fail": "recipes save failed: %v",
+    "sett.recipes.open": "open -a",
+    "sett.recipes.open_default": "default (%s)",
+    "sett.recipes.open_forced": "forced (%s)",
+    "sett.general.advanced": "Advanced",
+    "sett.general.open_apps": "open -a apps: %s"
   }
 }

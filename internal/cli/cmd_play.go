@@ -65,7 +65,7 @@ Play time is recorded unless --no-stats is given.`,
 				}
 				eff.Cores[g.ConsoleID] = []string{corePath}
 			}
-			proc, err := eff.Command(g)
+			proc, err := eff.Command(g, a.cfg.OpenApps)
 			if err != nil {
 				return fmt.Errorf("build command: %w", err)
 			}
@@ -84,7 +84,7 @@ Play time is recorded unless --no-stats is given.`,
 			if dryRun {
 				cprintf(cmd, "%s\n\n", banner("Dry run", g.Title))
 				cprintf(cmd, "  %s\n", kv("recipe", r.Name))
-				cprintf(cmd, "  %s\n", kv("emulator", eff.Emulator))
+				cprintf(cmd, "  %s\n", kv("emulator", eff.LaunchLabel(a.cfg.OpenApps)))
 				if corePath != "" {
 					cprintf(cmd, "  %s\n", kv("core", corePath))
 				}

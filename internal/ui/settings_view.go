@@ -16,7 +16,7 @@ import (
 func (m Model) settingsRows() int {
 	switch m.settTab {
 	case TabGeneral:
-		return generalRows()
+		return m.generalRows()
 	case TabRecipes:
 		// Recipe rows plus the detail rows under the selected recipe.
 		return max(len(m.baseRecipes)+len(recipeFields()), 1)
@@ -345,11 +345,19 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx := m.settCur - 1; idx >= 0 && idx < len(opts) {
 				return m, m.applyLanguage(opts[idx][0])
 			}
+			if m.settCur == openAppsRow() {
+				return m, m.toggleOpenApps()
+			}
 			return m, nil
 		}
 		// Space also toggles for discoverability.
-		if msg.String() == " " && m.settCur == 0 {
-			return m, m.toggleArt()
+		if msg.String() == " " {
+			switch m.settCur {
+			case 0:
+				return m, m.toggleArt()
+			case openAppsRow():
+				return m, m.toggleOpenApps()
+			}
 		}
 	case TabRecipes:
 		if key.Matches(msg, k.Select) {
@@ -527,6 +535,13 @@ func (m Model) renderGeneralTab(w int) []string {
 		}
 		lines = append(lines, plain)
 	}
+	// Advanced section below the languages: the global default for
+	// recipes that do not force their own `open` setting.
+	lines = append(lines, "")
+	lines = append(lines, sectionStrip(i18n.T("sett.general.advanced"), w))
+	lines = append(lines, "")
+	openLabel := i18n.T("sett.general.open_apps", artOnOff(m.openApps))
+	lines = append(lines, toggleRow(labelOf(openLabel), valueOf(openLabel), m.openApps, m.settCur == openAppsRow(), w))
 	return lines
 }
 
@@ -553,21 +568,17 @@ func (m Model) renderRecipesTab(w int) []string {
 		if marks[r.Name] {
 			tag = " [" + i18n.T("sett.recipes.patched") + "]"
 		}
-		// Effective (patched) emulator shown; base file stays untouched.
-		effEmu := r.Emulator
+		// Effective (patched) launcher shown; base file stays untouched.
+		eff := r
 		if i < len(effList) {
-			effEmu = effList[i].Emulator
+			eff = effList[i]
 		} else {
-			for _, p := range emulate.PatchesFor(m.patches, r.Name) {
-				if p.Emulator != nil {
-					effEmu = *p.Emulator
-				}
-			}
+			eff = emulate.ApplyPatches([]emulate.Recipe{r}, emulate.PatchesFor(m.patches, r.Name))[0]
 		}
-		if _, ok := emulate.LookupBinary(effEmu); !ok {
+		if _, ok := eff.LookupTarget(m.openAppsEnabled()); !ok {
 			tag += " [" + i18n.T("sett.recipes.missing") + "]"
 		}
-		row := fmt.Sprintf("%s → %s%s", r.Name, effEmu, tag)
+		row := fmt.Sprintf("%s → %s%s", r.Name, eff.LaunchLabel(m.openAppsEnabled()), tag)
 		plain := fit("  "+truncate(row, w-2), w)
 		if i == m.settCur {
 			plain = styledBarRow(plain)
@@ -578,19 +589,13 @@ func (m Model) renderRecipesTab(w int) []string {
 		if i != m.settCur {
 			continue
 		}
-		var eff emulate.Recipe
-		if i < len(effList) {
-			eff = effList[i]
-		} else {
-			eff = r
-		}
 		for fi, f := range fields {
 			label := i18n.T(f.label)
 			if m.settEditing && m.settPatchField == f.name {
 				lines = append(lines, styledBarRow(editLine("    ", label, string(m.settBuf), w)))
 				continue
 			}
-			val := fieldDisplay(f.name, r, eff)
+			val := fieldDisplay(f.name, r, eff, m.openAppsEnabled())
 			if fi == m.settField {
 				row := label + ": " + val
 				lines = append(lines, styledBarRow(fit("    "+truncate(row, w-4), w)))

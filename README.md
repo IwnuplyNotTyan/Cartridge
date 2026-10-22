@@ -24,7 +24,6 @@ Write `~/.config/cartridge/recipes.json` or a recipes directory (one recipe per 
 
 Add games, mods (aka hack's) and cheats, install emulators and then play!
 
-
 For CLI usage, check `--help`
 
 ---
@@ -35,6 +34,7 @@ For CLI usage, check `--help`
 |--------|----|----|------|
 |MGBA|✅|✅|✅|
 |RetroArch|✅|✅|✅|
+| OpenEmu|✅|✅|❌|
 |Mesen|✅|✅|❔|
 |Azahar (Plus)| ✅ |❌ |❌|
 
