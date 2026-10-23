@@ -61,6 +61,41 @@ nix run github:iwnuplynottyan/cartridge
 
 [^2]: Check nixpkgs [changelog](https://nixos.org/manual/nixpkgs/unstable/release-notes#x86_64-darwin-26.11) about intel macos support state
 
+#### Home Manager
+
+Add the flake input:
+
+``` nix
+{
+  inputs.cartridge.url = "github:iwnuplynottyan/cartridge";
+}
+```
+
+Import the module and configure it:
+
+``` nix
+{ inputs, ... }:
+{
+  imports = [ inputs.cartridge.homeModules.default ];
+
+  programs.cartridge = {
+    enable = true;
+    romDir = "~/files/games";
+    lang = "en";
+    showArt = true;
+
+    steam = {
+      autoAdd = true;
+      prefix = "Cartridge";
+    };
+  };
+}
+```
+
+Only the options you set are written to `~/.config/cartridge/config.json`.
+The file is managed as a read-only store symlink, so changes made from the
+TUI settings are not persisted while the module is enabled.
+
 #### Isolated wrapped can be made like it:
 ``` nix
 let

@@ -19,6 +19,7 @@
         then nixpkgs-darwinx86.legacyPackages.${system}
         else nixpkgs.legacyPackages.${system};
       version = "0.1.0";
+      hmModule = import ./nix/home-manager.nix { inherit self; };
       mkCartridge = pkgs: pkgs.buildGo127Module {
         pname = "cartridge";
         inherit version;
@@ -47,6 +48,7 @@
         {
           default = mkCartridge pkgs;
         });
+      homeModules.default = hmModule;
       devShells = forAllSystems (system:
         let
           pkgs = pkgsFor system;
