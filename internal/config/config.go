@@ -334,24 +334,13 @@ func Resolve(dirFlag, libFlag, langFlag, cfgFlag, recipesFlag string) (Config, e
 	}, nil
 }
 
-// defaultRomDir prefers ~/files/games, then ./games, then ".".
+// defaultRomDir returns ~/Documents/Games, falling back to "." when the
+// home directory cannot be determined.
 func defaultRomDir() string {
 	if home, err := os.UserHomeDir(); err == nil {
-		if p := filepath.Join(home, "files", "games"); isDir(p) {
-			return p
-		}
-	}
-	for _, p := range []string{"./games", "."} {
-		if isDir(p) {
-			return p
-		}
+		return filepath.Join(home, "Documents", "Games")
 	}
 	return "."
-}
-
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
 }
 
 // expandPath expands a leading ~ to the home dir and cleans the result.

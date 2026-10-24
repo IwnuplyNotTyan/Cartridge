@@ -80,7 +80,7 @@ Import the module and configure it:
 
   programs.cartridge = {
     enable = true;
-    romDir = "~/files/games";
+    romDir = "~/Documents/Games";
     lang = "en";
     showArt = true;
 

@@ -36,8 +36,8 @@ func TestResolveDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if c.RomDir != "." {
-		t.Fatalf("RomDir = %q, want .", c.RomDir)
+	if want := filepath.Join(home, "Documents", "Games"); c.RomDir != want {
+		t.Fatalf("RomDir = %q, want %q", c.RomDir, want)
 	}
 	wantLib := filepath.Join(home, ".local", "share", "cartridge", "library.json")
 	if c.Library != wantLib {
