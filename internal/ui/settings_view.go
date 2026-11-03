@@ -569,7 +569,7 @@ func (m Model) renderRecipesTab(w int) []string {
 			tag = " [" + i18n.T("sett.recipes.patched") + "]"
 		}
 		// Effective (patched) launcher shown; base file stays untouched.
-		eff := r
+		var eff emulate.Recipe
 		if i < len(effList) {
 			eff = effList[i]
 		} else {
