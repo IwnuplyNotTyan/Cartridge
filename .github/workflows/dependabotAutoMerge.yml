@@ -1,4 +1,5 @@
 name: Dependabot Auto-merge
+
 on: pull_request
 
 permissions:
@@ -8,13 +9,45 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v7
-      
+      - name: Checkout PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ github.token }}
+
+      - name: Test helper
+        run: bash nix/tests/update-vendor-hash-test.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Run tests
         run: go test ./...
-      
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Update vendorHash
+        run: ./nix/update-vendor-hash.sh
+
+      - name: Commit hash update
+        run: |
+          if git diff --quiet -- flake.nix; then
+            echo "flake.nix is unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          git commit -m "chore(nix): update vendorHash"
+          git push
+
       - name: Auto-merge
         run: gh pr merge --merge "${{ github.event.pull_request.html_url }}"
         env:
