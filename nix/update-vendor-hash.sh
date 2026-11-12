@@ -55,15 +55,21 @@ if [[ "$mode" == "check" ]]; then
   exit 1
 fi
 
+backup="$(mktemp)"
+cp "$flake" "$backup"
+trap 'rm -f "$log" "$backup"' EXIT
+
 sed -i.bak -E "s#vendorHash = \"sha256-[A-Za-z0-9+/=]+\"#vendorHash = \"$got\"#" "$flake"
 rm -f "$flake.bak"
 
 if ! grep -qF "vendorHash = \"$got\"" "$flake"; then
+  cp "$backup" "$flake"
   echo "error: failed to update vendorHash in $flake" >&2
   exit 1
 fi
 
 if ! nix build .#default --no-link >"$log" 2>&1; then
+  cp "$backup" "$flake"
   echo "error: nix build still fails after updating vendorHash to $got" >&2
   cat "$log" >&2
   exit 1

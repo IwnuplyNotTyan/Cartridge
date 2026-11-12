@@ -49,6 +49,21 @@ jobs:
           git push
 
       - name: Auto-merge
-        run: gh pr merge --merge "${{ github.event.pull_request.html_url }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          # The hash commit was pushed with GITHUB_TOKEN, so it has no CI run.
+          # Merge the exact commit that was just built. The retry covers the
+          # brief UNKNOWN merge state GitHub reports after a push.
+          # This assumes main is unprotected; with branch protection, use
+          # auto-merge plus a PAT so the bot commit triggers CI.
+          head_sha="$(git rev-parse HEAD)"
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge --merge --match-head-commit "$head_sha" "$PR_URL"; then
+              exit 0
+            fi
+            echo "merge attempt $attempt failed; retrying in 5s" >&2
+            sleep 5
+          done
+          exit 1

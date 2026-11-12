@@ -46,6 +46,17 @@ case "$mode" in
     echo "compile error" >&2
     exit 1
     ;;
+  stale-then-fail)
+    if grep -qF 'sha256-New+hash/with+base64/chars=' "$flake"; then
+      echo "error: builder for '/nix/store/test.drv' failed with exit code 1:" >&2
+      echo "compile error after update" >&2
+      exit 1
+    fi
+    echo "error: hash mismatch in fixed-output derivation '/nix/store/test.drv':" >&2
+    echo "  specified: sha256-OLDoldOLDoldOLDoldOLDoldOLDoldOLDoldOLDoldOLD0=" >&2
+    echo "  got:    sha256-New+hash/with+base64/chars=" >&2
+    exit 1
+    ;;
   stale-same)
     echo "error: hash mismatch in fixed-output derivation '/nix/store/test.drv':" >&2
     echo "  specified: sha256-OLDoldOLDoldOLDoldOLDoldOLDoldOLDoldOLDoldOLD0=" >&2
@@ -106,6 +117,15 @@ test_same_hash_build_failure_is_reported() {
   pass "build failure with matching hash is reported"
 }
 
+test_failed_rebuild_restores_flake() {
+  new_case
+  cp "$CASE_DIR/flake.nix" "$CASE_DIR/orig.nix"
+  if run_script stale-then-fail >"$CASE_DIR/out" 2>&1; then fail "post-update build failure should exit non-zero"; fi
+  cmp -s "$CASE_DIR/orig.nix" "$CASE_DIR/flake.nix" || fail "flake.nix not restored after failed rebuild"
+  grep -qF "compile error after update" "$CASE_DIR/out" || fail "rebuild log not shown"
+  pass "failed post-update rebuild restores flake.nix"
+}
+
 test_missing_vendor_hash_is_reported() {
   new_case
   sed -i.bak 's/.*vendorHash.*/  description = "no hash";/' "$CASE_DIR/flake.nix"
@@ -121,5 +141,6 @@ test_check_ok
 test_update_ok_is_noop
 test_build_failure_is_reported
 test_same_hash_build_failure_is_reported
+test_failed_rebuild_restores_flake
 test_missing_vendor_hash_is_reported
 echo "all tests passed"
