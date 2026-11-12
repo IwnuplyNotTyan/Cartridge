@@ -1,0 +1,65 @@
+name: Nix vendorHash
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - go.mod
+      - go.sum
+  push:
+    branches: [main, master]
+    paths:
+      - go.mod
+      - go.sum
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: nix-vendor-hash-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vendor-hash:
+    name: Update vendorHash
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - name: Checkout (same repo or push)
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
+          token: ${{ github.token }}
+
+      - name: Checkout (fork, read-only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/checkout@v7
+
+      - name: Test helper
+        run: bash nix/tests/update-vendor-hash-test.sh
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Update vendorHash
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: ./nix/update-vendor-hash.sh
+
+      - name: Check vendorHash
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+        run: ./nix/update-vendor-hash.sh --check
+
+      - name: Commit hash update
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if git diff --quiet -- flake.nix; then
+            echo "flake.nix is unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          git commit -m "chore(nix): update vendorHash"
+          git push
