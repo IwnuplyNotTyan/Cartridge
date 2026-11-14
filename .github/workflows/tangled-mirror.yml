@@ -1,0 +1,56 @@
+name: Tangled Mirror
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tangled-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror refs
+    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'IwnuplyNotTyan/Cartridge' &&
+      github.event.repository.fork == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure SSH
+        env:
+          TANGLED_SSH_KEY: ${{ secrets.TANGLED_SSH_KEY }}
+        run: |
+          if [ -z "$TANGLED_SSH_KEY" ]; then
+            echo "::error::TANGLED_SSH_KEY is not configured for this repository"
+            exit 1
+          fi
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$TANGLED_SSH_KEY" > "$HOME/.ssh/tangled_mirror"
+          chmod 600 "$HOME/.ssh/tangled_mirror"
+          printf '%s\n' 'tangled.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII2UShEm/FFPmYZUizaPnIqOJuynoCQpcLhl5PPHd02n' \
+            > "$HOME/.ssh/tangled_known_hosts"
+
+      - name: Push refs
+        env:
+          GIT_SSH_COMMAND: >-
+            ssh -i $HOME/.ssh/tangled_mirror
+            -o IdentitiesOnly=yes
+            -o UserKnownHostsFile=$HOME/.ssh/tangled_known_hosts
+            -o StrictHostKeyChecking=yes
+        run: |
+          git remote add tangled git@tangled.org:iwnuply.tngl.sh/Cartridge
+          # actions/checkout keeps other branches as refs/remotes/origin/*.
+          git symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
+          git push --force --prune tangled \
+            'refs/remotes/origin/*:refs/heads/*' \
+            'refs/tags/*:refs/tags/*'
