@@ -1,9 +1,20 @@
 version: "2"
 linters:
   enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
     - godot
     - misspell
+    - nilerr
+    - nolintlint
+    - unconvert
     - whitespace
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain
   exclusions:
     generated: lax
     presets:

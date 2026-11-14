@@ -16,7 +16,7 @@ func AppIDFor(exe, appName string) uint32 {
 
 // SignedAppID converts the uint32 id to the signed int32 stored in
 // shortcuts.vdf (same bits, little-endian).
-func SignedAppID(id uint32) int32 { return int32(id) }
+func SignedAppID(id uint32) int32 { return asInt32(id) }
 
 // ShortcutID64 returns the 64-bit id used for grid art / launch URLs:
 // (appid << 32) | 0x02000000.

@@ -39,6 +39,14 @@ type vdfDict struct {
 
 func newDict() *vdfDict { return &vdfDict{vals: map[string]*vdfValue{}} }
 
+// asInt32 stores a 32-bit value as the signed integer VDF uses. Steam keeps
+// app ids as raw little-endian bit patterns, so the sign bit is part of the
+// payload: this is a reinterpretation, not an arithmetic conversion.
+func asInt32(v uint32) int32 { return int32(v) } // #nosec G115 -- 32-bit VDF bit pattern; sign bit is payload
+
+// asUint32 is the inverse of asInt32 for values read back from VDF.
+func asUint32(v int32) uint32 { return uint32(v) } // #nosec G115 -- 32-bit VDF bit pattern; sign bit is payload
+
 func (d *vdfDict) set(k string, v *vdfValue) {
 	if _, ok := d.vals[k]; !ok {
 		d.keys = append(d.keys, k)
@@ -128,7 +136,7 @@ func (r *vdfReader) parseDict() (*vdfDict, error) {
 			if err != nil {
 				return nil, fmt.Errorf("vdf int %q: %w", key, err)
 			}
-			d.set(key, &vdfValue{i32: int32(v), isI32: true})
+			d.set(key, &vdfValue{i32: asInt32(v), isI32: true})
 		case vdfUInt64:
 			v, err := r.u64()
 			if err != nil {
@@ -140,7 +148,7 @@ func (r *vdfReader) parseDict() (*vdfDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			d.set(key, &vdfValue{i32: int32(v), isI32: true})
+			d.set(key, &vdfValue{i32: asInt32(v), isI32: true})
 		case vdfWide:
 			// Wide string: approximate as raw bytes until double null.
 			// Rare in shortcuts.vdf; keep position sane.
@@ -198,7 +206,7 @@ func decodeVDF(data []byte) (*vdfDict, error) {
 			if err != nil {
 				return nil, err
 			}
-			root.set(key, &vdfValue{i32: int32(v), isI32: true})
+			root.set(key, &vdfValue{i32: asInt32(v), isI32: true})
 		default:
 			return nil, fmt.Errorf("vdf: unexpected top-level type 0x%02x", t)
 		}
@@ -227,7 +235,7 @@ func encodeVDF(root *vdfDict) []byte {
 			buf.WriteString(k)
 			buf.WriteByte(0x00)
 			var b [4]byte
-			binary.LittleEndian.PutUint32(b[:], uint32(v.i32))
+			binary.LittleEndian.PutUint32(b[:], asUint32(v.i32))
 			buf.Write(b[:])
 		} else if v.isU64 {
 			buf.WriteByte(vdfUInt64)
@@ -261,7 +269,7 @@ func encodeDict(buf *bytes.Buffer, d *vdfDict) {
 			buf.WriteString(k)
 			buf.WriteByte(0x00)
 			var b [4]byte
-			binary.LittleEndian.PutUint32(b[:], uint32(v.i32))
+			binary.LittleEndian.PutUint32(b[:], asUint32(v.i32))
 			buf.Write(b[:])
 		} else if v.isU64 {
 			buf.WriteByte(vdfUInt64)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -227,8 +228,8 @@ func TestRunToChannelEndToEnd(t *testing.T) {
 			t.Fatalf("child output missing %q: %q", want, joined)
 		}
 	}
-	exitErr, ok := runErr.(*exec.ExitError)
-	if !ok || exitErr.ExitCode() != 3 {
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) || exitErr.ExitCode() != 3 {
 		t.Fatalf("exit must propagate as code 3, got %v", runErr)
 	}
 }

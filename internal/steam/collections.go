@@ -254,7 +254,7 @@ func reconcileCollections(cfgDir string, want map[string][]uint32, drop map[uint
 	nsPath, namespacesPath, modifiedPath := cloudPaths(cfgDir)
 	if st, err := os.Stat(cfgDir + "/" + cloudDirName); err != nil || !st.IsDir() {
 		res.Skipped = true
-		return res, nil
+		return res, nil //nolint:nilerr // missing Steam cloud dir means there is nothing to reconcile
 	}
 	pairs, err := loadNamespace(nsPath)
 	if err != nil {

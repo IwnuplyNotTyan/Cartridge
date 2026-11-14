@@ -77,7 +77,7 @@ func dictInt(d *vdfDict, def int32, names ...string) int32 {
 // shortcutFromDict parses one entry.
 func shortcutFromDict(d *vdfDict) Shortcut {
 	s := Shortcut{
-		AppID:              uint32(dictInt(d, 0, "appid")),
+		AppID:              asUint32(dictInt(d, 0, "appid")),
 		AppName:            dictStr(d, "appname", "AppName"),
 		Exe:                dictStr(d, "exe", "Exe"),
 		StartDir:           dictStr(d, "StartDir", "startdir", "startDir"),
@@ -145,7 +145,7 @@ func (s Shortcut) toDict() *vdfDict {
 		}
 		return 0
 	}
-	d.set("appid", &vdfValue{i32: int32(s.AppID), isI32: true})
+	d.set("appid", &vdfValue{i32: asInt32(s.AppID), isI32: true})
 	d.set("AppName", &vdfValue{str: s.AppName, isStr: true})
 	d.set("Exe", &vdfValue{str: s.Exe, isStr: true})
 	d.set("StartDir", &vdfValue{str: s.StartDir, isStr: true})

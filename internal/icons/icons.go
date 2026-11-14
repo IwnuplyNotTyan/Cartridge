@@ -394,7 +394,7 @@ func (c *Cache) Stat() Stats {
 	c.mu.Unlock()
 	_ = filepath.WalkDir(c.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
-			return nil
+			return nil //nolint:nilerr // best-effort cache walk skips unreadable entries
 		}
 		if filepath.Base(p) == manifestName {
 			return nil
@@ -422,14 +422,14 @@ func (c *Cache) Prune(keep map[string]bool) (removed int, bytesFreed int64, err 
 	var victims []string
 	_ = filepath.WalkDir(c.Dir, func(p string, d os.DirEntry, werr error) error {
 		if werr != nil || d.IsDir() {
-			return nil
+			return nil //nolint:nilerr // best-effort cache walk skips unreadable entries
 		}
 		if filepath.Base(p) == manifestName {
 			return nil
 		}
 		rel, rerr := filepath.Rel(c.Dir, p)
 		if rerr != nil {
-			return nil
+			return nil //nolint:nilerr // best-effort cache walk skips entries outside the cache
 		}
 		id := gameFileID(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)))
 		if !keep[id] {
@@ -478,11 +478,11 @@ func (c *Cache) removeEmptyShards() {
 	seen := map[string]bool{}
 	_ = filepath.WalkDir(c.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() || p == c.Dir {
-			return nil
+			return nil //nolint:nilerr // best-effort shard cleanup skips unreadable entries
 		}
 		rel, rerr := filepath.Rel(c.Dir, p)
 		if rerr != nil {
-			return nil
+			return nil //nolint:nilerr // best-effort shard cleanup skips entries outside the cache
 		}
 		if strings.Count(rel, string(os.PathSeparator)) == 0 {
 			seen[p] = true
@@ -492,11 +492,11 @@ func (c *Cache) removeEmptyShards() {
 	lv2 := []string{}
 	_ = filepath.WalkDir(c.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() || p == c.Dir {
-			return nil
+			return nil //nolint:nilerr // best-effort shard cleanup skips unreadable entries
 		}
 		rel, rerr := filepath.Rel(c.Dir, p)
 		if rerr != nil {
-			return nil
+			return nil //nolint:nilerr // best-effort shard cleanup skips entries outside the cache
 		}
 		if strings.Count(rel, string(os.PathSeparator)) == 1 {
 			lv2 = append(lv2, p)

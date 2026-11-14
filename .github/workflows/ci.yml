@@ -23,15 +23,38 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: goimports
+      - name: Format
         run: |
           go install golang.org/x/tools/cmd/goimports@latest
-          goimports -w .
+          status=0
+          for tool in gofmt goimports; do
+            unformatted="$(find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 -r "$tool" -l)"
+            if [ -n "$unformatted" ]; then
+              echo "::error::$tool needs to format:"
+              echo "$unformatted"
+              status=1
+            fi
+          done
+          exit "$status"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.15.0
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@latest
+
+      - name: shellcheck
+        run: shellcheck nix/*.sh nix/tests/*.sh
 
   test:
     name: Test
@@ -52,6 +75,32 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # G304/G703 (paths come from the user's own config), G204 (no shell
+      # involved) and G301/G302/G306 (user-owned files) describe a server trust
+      # boundary this local CLI does not have. Everything else stays enabled.
+      - name: gosec
+        run: >-
+          go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+          -quiet
+          -exclude=G304,G301,G302,G306,G204,G703
+          -nosec-require-justification
+          -nosec-require-rules
+          ./...
 
   build:
     name: Build

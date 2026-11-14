@@ -52,7 +52,7 @@ func ConsoleName(g rom.Game) string {
 	if g.ConsoleName != "" {
 		return g.ConsoleName
 	}
-	return string(rom.ByID(g.ConsoleID).Name)
+	return rom.ByID(g.ConsoleID).Name
 }
 
 // CustomName returns the per-console custom category name for a game.

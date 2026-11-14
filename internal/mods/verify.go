@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,15 @@ func decodeVarint(data []byte, off *int) (uint64, error) {
 	}
 }
 
+// fitInt64 clamps a patch-declared size for display. The actual comparison
+// against the ROM length uses uint64, so a crafted header cannot overflow.
+func fitInt64(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v) // #nosec G115 -- bounded by the guard above
+}
+
 // footCRCs splits a BPS/UPS file into body and its 12-byte footer
 // (source CRC32, target CRC32, patch CRC32).
 func footCRCs(data []byte) (body []byte, srcCRC, dstCRC, patchCRC uint32, err error) {
@@ -154,10 +164,11 @@ func checkBPS(patchPath string, rom []byte) Check {
 	if err != nil {
 		return Check{Kind: "broken", Note: "bad header"}
 	}
-	if metaSize > uint64(len(data)-off) {
+	remain := len(data) - off      // a successful varint read keeps off <= len(data)
+	if metaSize > uint64(remain) { // #nosec G115 -- remain is non-negative
 		return Check{Kind: "broken", Note: "bad header"}
 	}
-	off += int(metaSize)
+	off += int(metaSize) // #nosec G115 -- metaSize is bounded by the remaining length above
 	if off+12 > len(data) {
 		return Check{Kind: "broken", Note: "truncated"}
 	}
@@ -169,8 +180,8 @@ func checkBPS(patchPath string, rom []byte) Check {
 		return Check{Kind: "broken", Note: "patch checksum mismatch"}
 	}
 	gotCRC := crc32.Checksum(rom, crc32.IEEETable)
-	if int64(srcSize) != int64(len(rom)) || wantCRC != gotCRC {
-		return Check{Kind: "base", WantSize: int64(srcSize), GotSize: int64(len(rom)),
+	if srcSize != uint64(len(rom)) || wantCRC != gotCRC {
+		return Check{Kind: "base", WantSize: fitInt64(srcSize), GotSize: int64(len(rom)),
 			WantCRC: wantCRC, GotCRC: gotCRC, HasCRC: true,
 			Note: fmt.Sprintf("bps wants %d bytes crc %08X, rom is %d bytes crc %08X",
 				srcSize, wantCRC, len(rom), gotCRC)}
@@ -207,8 +218,8 @@ func checkUPS(patchPath string, rom []byte) Check {
 		return Check{Kind: "broken", Note: "patch checksum mismatch"}
 	}
 	gotCRC := crc32.Checksum(rom, crc32.IEEETable)
-	if int64(srcSize) != int64(len(rom)) || wantCRC != gotCRC {
-		return Check{Kind: "base", WantSize: int64(srcSize), GotSize: int64(len(rom)),
+	if srcSize != uint64(len(rom)) || wantCRC != gotCRC {
+		return Check{Kind: "base", WantSize: fitInt64(srcSize), GotSize: int64(len(rom)),
 			WantCRC: wantCRC, GotCRC: gotCRC, HasCRC: true,
 			Note: fmt.Sprintf("ups wants %d bytes crc %08X, rom is %d bytes crc %08X",
 				srcSize, wantCRC, len(rom), gotCRC)}

@@ -2,6 +2,8 @@ module cartridge
 
 go 1.27.1
 
+toolchain go1.27.4
+
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/lipgloss/v2 v2.0.6
@@ -45,5 +47,5 @@ require (
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )

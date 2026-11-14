@@ -85,7 +85,7 @@ func ListDir(dir string) ([]Mod, error) {
 	var out []Mod
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // best-effort listing skips unreadable entries
 		}
 		if d.IsDir() {
 			if strings.HasPrefix(d.Name(), ".") && path != dir {
