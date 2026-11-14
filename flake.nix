@@ -60,6 +60,10 @@
               go_1_27
               gotools
               golangci-lint
+              govulncheck
+              gosec
+              actionlint
+              shellcheck
             ];
           };
         });
