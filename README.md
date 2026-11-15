@@ -61,7 +61,8 @@ nix run github:iwnuplynottyan/cartridge
 
 [^2]: Check nixpkgs [changelog](https://nixos.org/manual/nixpkgs/unstable/release-notes#x86_64-darwin-26.11) about intel macos support state
 
-#### Home Manager
+<details>
+ <summary><b>Home Manager</b></summary>
 
 Add the flake input:
 
@@ -126,6 +127,8 @@ in {
   };
 }
 ```
+
+</details>
 
 ## ⛏️ Build from source
 ```sh
