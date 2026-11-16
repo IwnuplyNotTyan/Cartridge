@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.0
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -16,7 +16,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/olsonb97/RomPatcher.go v1.0.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
