@@ -28,7 +28,7 @@
         # Updated automatically by nix/update-vendor-hash.sh.
         # Run it locally after changing go.mod/go.sum:
         #   ./nix/update-vendor-hash.sh
-        vendorHash = "sha256-7m4GKLN8ut9hP0W8frYSYDZYoRNBzKZE/fafHr+jXZ0=";
+        vendorHash = "sha256-H7rWaQMjv+Nmt4hhD8P4e0pGoe5vZ/hw7iCeE+RPoUA=";
 
         ldflags = [
           "-s"
