@@ -48,7 +48,7 @@ jobs:
             -o UserKnownHostsFile=$HOME/.ssh/tangled_known_hosts
             -o StrictHostKeyChecking=yes
         run: |
-          git remote add tangled git@tangled.org:iwnuply.tngl.sh/Cartridge
+          git remote add tangled git@tangled.org:iwnuply.shy.cat/Cartridge
           # actions/checkout keeps other branches as refs/remotes/origin/*.
           git symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
           git push --force --prune tangled \
